@@ -16,4 +16,4 @@
  * - Chunk appender for data writing
  * - Encoding and decoding utilities
  */
-package org.opensearch.tsdb.core.chunks;
+package org.opensearch.tsdb.core.chunk;

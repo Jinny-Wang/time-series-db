@@ -5,7 +5,7 @@
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
  */
-package org.opensearch.tsdb.core.chunks;
+package org.opensearch.tsdb.core.chunk;
 
 /**
  * A chunk represents a compressed collection of time series samples.
