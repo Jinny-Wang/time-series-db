@@ -17,40 +17,19 @@ import org.opensearch.tsdb.core.chunk.XORIterator;
  * ClosedChunk provides read-only access to compressed chunk data, as well as access to chunk metadata without requiring decompression.
  */
 public class ClosedChunk {
-
-    private final long minTimestamp;
-    private final long maxTimestamp;
     private final ChunkIterator chunkIterator;
+    private final Encoding encoding;
 
     /**
      * Constructs a ClosedChunk with the given parameters.
-     * @param minTimestamp the minimum timestamp in the chunk
-     * @param maxTimestamp the maximum timestamp in the chunk
      * @param bytes the compressed chunk data
      * @param encoding the encoding format used for the chunk data
      */
-    public ClosedChunk(long minTimestamp, long maxTimestamp, byte[] bytes, Encoding encoding) {
-        this.minTimestamp = minTimestamp;
-        this.maxTimestamp = maxTimestamp;
+    public ClosedChunk(byte[] bytes, Encoding encoding) {
         this.chunkIterator = switch (encoding) {
             case XOR -> new XORIterator(bytes);
         };
-    }
-
-    /**
-     * Returns the minimum timestamp of the chunk.
-     * @return the minimum timestamp
-     */
-    public long getMinTimestamp() {
-        return minTimestamp;
-    }
-
-    /**
-     * Returns the maximum timestamp of the chunk.
-     * @return the maximum timestamp
-     */
-    public long getMaxTimestamp() {
-        return maxTimestamp;
+        this.encoding = encoding;
     }
 
     /**
@@ -59,5 +38,13 @@ public class ClosedChunk {
      */
     public ChunkIterator getChunkIterator() {
         return chunkIterator;
+    }
+
+    /**
+     * Returns the encoding format used for the chunk data.
+     * @return the Encoding
+     */
+    public Encoding getEncoding() {
+        return encoding;
     }
 }

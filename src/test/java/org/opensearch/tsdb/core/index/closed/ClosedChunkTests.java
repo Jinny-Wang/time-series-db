@@ -18,11 +18,9 @@ public class ClosedChunkTests extends OpenSearchTestCase {
 
     public void testGetters() {
         XORChunk xorChunk = new XORChunk();
+        ClosedChunk chunk = new ClosedChunk(xorChunk.bytes(), Encoding.XOR);
 
-        ClosedChunk chunk = new ClosedChunk(1000L, 2000L, xorChunk.bytes(), Encoding.XOR);
-
-        assertEquals(1000L, chunk.getMinTimestamp());
-        assertEquals(2000L, chunk.getMaxTimestamp());
+        assertEquals(Encoding.XOR, chunk.getEncoding());
         assertNotNull(chunk.getChunkIterator());
         assertTrue(chunk.getChunkIterator() instanceof XORIterator);
     }
@@ -33,7 +31,7 @@ public class ClosedChunkTests extends OpenSearchTestCase {
         appender.append(1000L, 10.0);
         appender.append(2000L, 20.0);
 
-        ClosedChunk chunk = new ClosedChunk(1000L, 2000L, xorChunk.bytes(), Encoding.XOR);
+        ClosedChunk chunk = new ClosedChunk(xorChunk.bytes(), Encoding.XOR);
         ChunkIterator iterator = chunk.getChunkIterator();
 
         assertNotNull(iterator);
