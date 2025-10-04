@@ -12,6 +12,7 @@ import org.opensearch.tsdb.lang.m3.stage.AliasStage;
 import org.opensearch.tsdb.lang.m3.stage.AvgStage;
 import org.opensearch.tsdb.lang.m3.stage.MaxStage;
 import org.opensearch.tsdb.lang.m3.stage.MinStage;
+import org.opensearch.tsdb.lang.m3.stage.AsPercentStage;
 import org.opensearch.tsdb.lang.m3.stage.ScaleStage;
 import org.opensearch.tsdb.lang.m3.stage.SortStage;
 import org.opensearch.tsdb.lang.m3.stage.SumStage;
@@ -85,6 +86,7 @@ public class PipelineStageFactory {
             registerStage(SortStage.class);
             registerStage(SumStage.class);
             registerStage(ValueFilterStage.class);
+            registerStage(AsPercentStage.class);
         } catch (Exception e) {
             throw new RuntimeException("Failed to auto-register pipeline stages", e);
         }
