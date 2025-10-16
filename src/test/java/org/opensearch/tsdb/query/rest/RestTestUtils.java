@@ -5,7 +5,7 @@
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
  */
-package org.opensearch.tsdb.plugin.rest;
+package org.opensearch.tsdb.query.rest;
 
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.rest.RestStatus;
@@ -35,7 +35,7 @@ import static org.junit.Assert.assertNotNull;
  * </ul>
  *
  * <p>This class is specifically for REST API response validation. For test data creation,
- * see {@link org.opensearch.tsdb.util.TestDataBuilder}.
+ * see {@link org.opensearch.tsdb.utils.TestDataBuilder}.
  */
 @SuppressWarnings("unchecked")
 public final class RestTestUtils {

@@ -5,7 +5,7 @@
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
  */
-package org.opensearch.tsdb.plugin.rest;
+package org.opensearch.tsdb.query.rest;
 
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.common.xcontent.json.JsonXContent;
@@ -29,18 +29,18 @@ import java.util.Map;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasSize;
-import static org.opensearch.tsdb.plugin.rest.RestTestUtils.getResultArray;
-import static org.opensearch.tsdb.plugin.rest.RestTestUtils.parseJsonResponse;
-import static org.opensearch.tsdb.plugin.rest.RestTestUtils.validateErrorResponse;
-import static org.opensearch.tsdb.plugin.rest.RestTestUtils.validateSuccessResponse;
-import static org.opensearch.tsdb.util.TestDataBuilder.createSearchResponse;
-import static org.opensearch.tsdb.util.TestDataBuilder.createSearchResponseWithMultipleAggregations;
-import static org.opensearch.tsdb.util.TestDataBuilder.createSearchResponseWithNullAggregations;
-import static org.opensearch.tsdb.util.TestDataBuilder.createTimeSeriesWithAlias;
-import static org.opensearch.tsdb.util.TestDataBuilder.createTimeSeriesWithEmptySamples;
-import static org.opensearch.tsdb.util.TestDataBuilder.createTimeSeriesWithLabels;
-import static org.opensearch.tsdb.util.TestDataBuilder.createTimeSeriesWithNullAlias;
-import static org.opensearch.tsdb.util.TestDataBuilder.createTimeSeriesWithNullLabels;
+import static org.opensearch.tsdb.query.rest.RestTestUtils.getResultArray;
+import static org.opensearch.tsdb.query.rest.RestTestUtils.parseJsonResponse;
+import static org.opensearch.tsdb.query.rest.RestTestUtils.validateErrorResponse;
+import static org.opensearch.tsdb.query.rest.RestTestUtils.validateSuccessResponse;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createSearchResponse;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createSearchResponseWithMultipleAggregations;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createSearchResponseWithNullAggregations;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createTimeSeriesWithAlias;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createTimeSeriesWithEmptySamples;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createTimeSeriesWithLabels;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createTimeSeriesWithNullAlias;
+import static org.opensearch.tsdb.utils.TestDataBuilder.createTimeSeriesWithNullLabels;
 
 /**
  * Comprehensive test suite for PromMatrixResponseListener.
@@ -464,6 +464,6 @@ public class PromMatrixResponseListenerTests extends OpenSearchTestCase {
     }
 
     private SearchResponse createSearchResponseWithException() {
-        return new org.opensearch.tsdb.util.TestDataBuilder.FailingSearchResponse();
+        return new org.opensearch.tsdb.utils.TestDataBuilder.FailingSearchResponse();
     }
 }
