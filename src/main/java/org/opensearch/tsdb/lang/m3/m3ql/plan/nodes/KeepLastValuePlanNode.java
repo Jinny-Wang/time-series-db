@@ -55,7 +55,12 @@ public class KeepLastValuePlanNode extends M3PlanNode {
         if (lookback.isEmpty()) {
             return ChronoUnit.FOREVER.getDuration(); // no limit on look back for keepLastValue without an arg
         }
-        return M3Duration.valueOf(lookback);
+
+        Duration duration = M3Duration.valueOf(lookback);
+        if (duration.isNegative()) {
+            throw new IllegalArgumentException("Lookback duration cannot be negative: " + lookback);
+        }
+        return duration;
     }
 
     /**

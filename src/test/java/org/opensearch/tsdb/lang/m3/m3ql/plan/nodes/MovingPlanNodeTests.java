@@ -122,6 +122,12 @@ public class MovingPlanNodeTests extends BasePlanNodeTests {
         expectThrows(IllegalArgumentException.class, () -> MovingPlanNode.of(functionNode));
     }
 
+    public void testMovingPlanNodeGetInvalidDuration() {
+        MovingPlanNode node = new MovingPlanNode(1, "-5m", WindowAggregationType.AVG);
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, node::getTimeDuration);
+        assertEquals("Window size cannot be negative: -5m", exception.getMessage());
+    }
+
     private static class TestMockVisitor extends M3PlanVisitor<String> {
         @Override
         public String process(M3PlanNode planNode) {

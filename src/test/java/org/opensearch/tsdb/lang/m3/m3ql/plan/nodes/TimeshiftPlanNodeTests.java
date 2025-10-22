@@ -79,6 +79,12 @@ public class TimeshiftPlanNodeTests extends BasePlanNodeTests {
         assertEquals(Duration.ofSeconds(120), node.getDuration());
     }
 
+    public void testTimeshiftPlanNodeHandlesNegativeDuration() {
+        TimeshiftPlanNode node = new TimeshiftPlanNode(1, "-120s");
+
+        assertEquals(Duration.ofSeconds(120).negated(), node.getDuration());
+    }
+
     public void testTimeshiftPlanNodeFactoryMethodThrowsOnNoArguments() {
         FunctionNode functionNode = new FunctionNode();
         functionNode.setFunctionName("timeshift");

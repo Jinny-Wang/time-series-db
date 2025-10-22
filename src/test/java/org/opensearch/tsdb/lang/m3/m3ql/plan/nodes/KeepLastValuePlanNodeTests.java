@@ -99,6 +99,13 @@ public class KeepLastValuePlanNodeTests extends BasePlanNodeTests {
         expectThrows(IllegalArgumentException.class, () -> KeepLastValuePlanNode.of(functionNode));
     }
 
+    public void testKeepLastValuePlanNodeThrowsOnNegativeLookback() {
+        KeepLastValuePlanNode keepLastValuePlanNode = new KeepLastValuePlanNode(1, "-5m");
+
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, keepLastValuePlanNode::duration);
+        assertEquals("Lookback duration cannot be negative: -5m", exception.getMessage());
+    }
+
     private static class TestMockVisitor extends M3PlanVisitor<String> {
         @Override
         public String process(M3PlanNode planNode) {

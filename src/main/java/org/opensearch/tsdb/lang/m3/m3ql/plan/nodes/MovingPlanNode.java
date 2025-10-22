@@ -53,7 +53,11 @@ public class MovingPlanNode extends M3PlanNode {
      * @return Duration
      */
     public Duration getTimeDuration() {
-        return M3Duration.valueOf(windowSize);
+        Duration window = M3Duration.valueOf(windowSize);
+        if (window.isNegative()) {
+            throw new IllegalArgumentException("Window size cannot be negative: " + windowSize);
+        }
+        return window;
     }
 
     /**

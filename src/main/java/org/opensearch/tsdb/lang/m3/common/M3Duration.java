@@ -61,7 +61,7 @@ public class M3Duration {
     }
 
     /**
-     * Converts a human-readable duration string to a {@link Duration}. Negative values are returned as the absolute value.
+     * Converts a human-readable duration string to a {@link Duration}.
      *
      * @param duration e.g. 5m, 2w
      * @return Duration representing the specified time
@@ -78,6 +78,11 @@ public class M3Duration {
 
         int len = trimmed.length();
         int index = 0;
+
+        // Skip optional leading '-'
+        if (trimmed.charAt(0) == '-') {
+            index++;
+        }
 
         // Extract the numeric part (only digits allowed)
         while (index < len && Character.isDigit(trimmed.charAt(index))) {

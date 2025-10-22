@@ -140,9 +140,6 @@ public class M3DurationTests extends OpenSearchTestCase {
 
         exception = assertThrows(IllegalArgumentException.class, () -> M3Duration.valueOf("abcs"));
         assertEquals("Duration must start with a number: abcs", exception.getMessage());
-
-        exception = assertThrows(IllegalArgumentException.class, () -> M3Duration.valueOf("-5s"));
-        assertEquals("Duration must start with a number: -5s", exception.getMessage());
     }
 
     /**
@@ -198,5 +195,12 @@ public class M3DurationTests extends OpenSearchTestCase {
     public void testMixedAlphanumericNumber() {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> M3Duration.valueOf("5a3s"));
         assertEquals("Invalid duration. Unknown time unit: a3s", exception.getMessage());
+    }
+
+    public void testNegativeDurations() {
+        assertEquals(Duration.ofSeconds(10).negated(), M3Duration.valueOf("-10s"));
+        assertEquals(Duration.ofMinutes(5).negated(), M3Duration.valueOf("-5m"));
+        assertEquals(Duration.ofHours(2).negated(), M3Duration.valueOf("-2h"));
+        assertEquals(Duration.ofDays(1).negated(), M3Duration.valueOf("-1d"));
     }
 }
