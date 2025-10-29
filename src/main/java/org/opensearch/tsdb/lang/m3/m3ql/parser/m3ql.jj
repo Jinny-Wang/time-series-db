@@ -57,6 +57,10 @@ TOKEN : {
   | < STRING_LITERAL: ("\"") (~["\""])* ("\"") >
 }
 
+<LITERAL_MODE> SKIP : {
+    "\n" | "\r" | "\r\n"
+}
+
 // Special tokens for literal arguments that preserve spaces and need to handle quotes/comments, etc.
 <LITERAL_MODE> TOKEN : {
     < LITERAL_QUOTED_STRING: "\"" (~["\""])* "\"" >
@@ -78,10 +82,6 @@ TOKEN : {
   | < CLOSED_CURLY: "}" >
   | < COMMA: "," >
   | < EXCLAMATION_MARK: "!" >
-}
-
-<LITERAL_MODE> SKIP : {
-    "\n" | "\r" | "\r\n"
 }
 
 RootNode Root() :
