@@ -123,12 +123,13 @@ public class MovingStage implements UnaryPipelineStage {
     }
 
     private WindowTransformer createTransformer(int windowPoints) {
-        return switch (function) {
+        return switch (function.getType()) {
             case AVG -> new AvgCircularBuffer(windowPoints);
             case MAX -> new MaxCircularBuffer(windowPoints);
             case MEDIAN -> new RunningMedian(windowPoints);
             case MIN -> new MinCircularBuffer(windowPoints);
             case SUM -> new SumCircularBuffer(windowPoints);
+            default -> throw new IllegalArgumentException("Unsupported function for moving window: " + function);
         };
     }
 
@@ -146,7 +147,7 @@ public class MovingStage implements UnaryPipelineStage {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         out.writeLong(interval);
-        out.writeString(function.name().toLowerCase(Locale.ROOT));
+        function.writeTo(out);
     }
 
     /**
@@ -158,8 +159,8 @@ public class MovingStage implements UnaryPipelineStage {
      */
     public static MovingStage readFrom(StreamInput in) throws IOException {
         long interval = in.readLong();
-        String function = in.readString();
-        return new MovingStage(interval, WindowAggregationType.fromString(function));
+        WindowAggregationType function = WindowAggregationType.readFrom(in);
+        return new MovingStage(interval, function);
     }
 
     /**

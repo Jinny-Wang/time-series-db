@@ -446,6 +446,12 @@ public class MovingStageTests extends AbstractWireSerializingTestCase<MovingStag
     @Override
     protected MovingStage createTestInstance() {
         long intervalMillis = randomIntBetween(1, 60) * 60000L; // Random minutes in milliseconds
-        return new MovingStage(intervalMillis, randomFrom(WindowAggregationType.values()));
+        WindowAggregationType[] functions = {
+            WindowAggregationType.SUM,
+            WindowAggregationType.AVG,
+            WindowAggregationType.MAX,
+            WindowAggregationType.MIN,
+            WindowAggregationType.MEDIAN };
+        return new MovingStage(intervalMillis, randomFrom(functions));
     }
 }

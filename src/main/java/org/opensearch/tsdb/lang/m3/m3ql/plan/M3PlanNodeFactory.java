@@ -25,6 +25,7 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.PerSecondPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.RemoveEmptyPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.ScalePlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.SortPlanNode;
+import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.SummarizePlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.TimeshiftPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.TransformNullPlanNode;
 
@@ -75,6 +76,8 @@ public class M3PlanNodeFactory {
                 return RemoveEmptyPlanNode.of(functionNode);
             case Constants.Functions.SORT:
                 return SortPlanNode.of(functionNode);
+            case Constants.Functions.SUMMARIZE:
+                return SummarizePlanNode.of(functionNode);
             case Constants.Functions.SCALE:
                 return ScalePlanNode.of(functionNode);
             case Constants.Functions.TIMESHIFT:

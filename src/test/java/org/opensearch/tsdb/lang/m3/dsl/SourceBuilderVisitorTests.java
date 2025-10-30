@@ -31,6 +31,7 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.PerSecondPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.RemoveEmptyPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.ScalePlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.SortPlanNode;
+import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.SummarizePlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.TimeshiftPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.TransformNullPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.UnionPlanNode;
@@ -252,6 +253,38 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
 
         IllegalStateException exception = expectThrows(IllegalStateException.class, () -> visitor.visit(planNode));
         assertEquals("MovingPlanNode must have exactly one child", exception.getMessage());
+    }
+
+    /**
+     * Test SummarizePlanNode with correct number of children (1).
+     */
+    public void testSummarizePlanNodeWithOneChild() {
+        SummarizePlanNode planNode = new SummarizePlanNode(1, "5m", WindowAggregationType.SUM, false);
+        planNode.addChild(createMockFetchNode(2));
+
+        // Should not throw an exception
+        assertNotNull(visitor.visit(planNode));
+    }
+
+    /**
+     * Test SummarizePlanNode with incorrect number of children (0).
+     */
+    public void testSummarizePlanNodeWithNoChildren() {
+        SummarizePlanNode planNode = new SummarizePlanNode(1, "5m", WindowAggregationType.AVG, false);
+
+        IllegalStateException exception = expectThrows(IllegalStateException.class, () -> visitor.visit(planNode));
+        assertEquals("SummarizePlanNode must have exactly one child", exception.getMessage());
+    }
+
+    /**
+     * Test SummarizePlanNode with alignToFrom=true.
+     */
+    public void testSummarizePlanNodeWithAlignToFrom() {
+        SummarizePlanNode planNode = new SummarizePlanNode(1, "1h", WindowAggregationType.MAX, true);
+        planNode.addChild(createMockFetchNode(2));
+
+        // Should not throw an exception
+        assertNotNull(visitor.visit(planNode));
     }
 
     /**

@@ -117,6 +117,11 @@ public class Constants {
         public static final String SORT = "sort";
 
         /**
+         * summarize function name.
+         */
+        public static final String SUMMARIZE = "summarize";
+
+        /**
          * scale function name.
          */
         public static final String SCALE = "scale";
