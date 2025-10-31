@@ -153,7 +153,7 @@ public class DivideStageTests extends AbstractWireSerializingTestCase<DivideStag
     }
 
     public void testSingleRightSeriesWithLabelMatching() {
-        // When labelKeys are specified, label matching is enforced even with single right series
+        // When labelKeys are specified, if it is a single right series, we ignore labels
         List<String> labelKeys = Arrays.asList("service");
         DivideStage stage = new DivideStage("right_series", labelKeys);
 
@@ -171,8 +171,36 @@ public class DivideStageTests extends AbstractWireSerializingTestCase<DivideStag
 
         List<TimeSeries> result = stage.process(Arrays.asList(leftSeries1, leftSeries2), Arrays.asList(rightSeries));
 
-        assertEquals(1, result.size());
+        assertEquals(2, result.size());
         assertEquals(5.0, result.get(0).getSamples().get(0).getValue(), 0.001);
+        assertEquals(10.0, result.get(1).getSamples().get(0).getValue(), 0.001);
+    }
+
+    public void testSelectiveLabelMatchingWithMultipleKeysException() {
+        // Test selective label matching with multiple label tag
+        List<String> labelTag = Arrays.asList("service"); // Match on both service and region
+        DivideStage stage = new DivideStage("right_series", labelTag);
+
+        // Left series with labels: service=api, instance=server1, region=us-east
+        List<Sample> leftSamples = Arrays.asList(new FloatSample(1000L, 50.0));
+        ByteLabels leftLabels = ByteLabels.fromMap(Map.of("service", "api", "instance", "server1", "region", "us-east"));
+        TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 1000L, 1000L, "left-series");
+
+        // Right series 1: service=api, instance=server2, region=us-east (should match - same service and region labels)
+        List<Sample> rightSamples1 = Arrays.asList(new FloatSample(1000L, 200.0));
+        ByteLabels rightLabels1 = ByteLabels.fromMap(Map.of("service", "api", "instance", "server2", "region", "us-east"));
+        TimeSeries rightSeries1 = new TimeSeries(rightSamples1, rightLabels1, 1000L, 1000L, 1000L, "right-series-1");
+
+        // Right series 2: service=api, instance=server1, region=us-west (should not match - different region)
+        List<Sample> rightSamples2 = Arrays.asList(new FloatSample(1000L, 300.0));
+        ByteLabels rightLabels2 = ByteLabels.fromMap(Map.of("service", "api", "instance", "server1", "region", "us-west"));
+        TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 1000L, 1000L, "right-series-2");
+
+        List<TimeSeries> left = Arrays.asList(leftSeries);
+        List<TimeSeries> right = Arrays.asList(rightSeries1, rightSeries2);
+        // Should throw exception
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, () -> stage.process(left, right));
+        assertTrue(exception.getMessage().contains("bucket for divide must have exactly one divisor, got 2"));
     }
 
     public void testEmptyInputs() {

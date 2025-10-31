@@ -14,6 +14,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.tsdb.core.model.FloatSample;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.model.Sample;
+import org.opensearch.tsdb.query.aggregator.TimeSeries;
 import org.opensearch.tsdb.query.stage.PipelineStageAnnotation;
 
 import java.io.IOException;
@@ -72,8 +73,26 @@ public class DivideStage extends AbstractBinaryProjectionStage {
     }
 
     @Override
+    protected boolean hasKeepNansOption() {
+        return false;
+    }
+
+    @Override
     protected List<String> getLabelKeys() {
         return labelKeys;
+    }
+
+    @Override
+    protected TimeSeries mergeMatchingSeries(List<TimeSeries> rightTimeSeries) {
+        // Divide expects only one time series for matched group
+        if (rightTimeSeries.isEmpty()) {
+            return null;
+        } else if (rightTimeSeries.size() == 1) {
+            return rightTimeSeries.get(0);
+        } else {
+            throw new IllegalArgumentException("bucket for divide must have exactly one divisor, got " + rightTimeSeries.size());
+        }
+
     }
 
     /**
@@ -100,6 +119,10 @@ public class DivideStage extends AbstractBinaryProjectionStage {
      */
     @Override
     protected Sample processSamples(Sample leftSample, Sample rightSample) {
+        // Divide only keep sample if left and right timestamp both exist
+        if (leftSample == null || rightSample == null) {
+            return null;
+        }
         double leftValue = leftSample.getValue();
         double rightValue = rightSample.getValue();
 

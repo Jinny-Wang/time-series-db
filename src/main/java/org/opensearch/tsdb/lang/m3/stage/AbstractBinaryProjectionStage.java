@@ -26,8 +26,14 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
      */
     protected AbstractBinaryProjectionStage() {}
 
+    /** The parameter name for label keys. */
+    public static final String LABELS_PARAM_KEY = "labels";
+
+    protected abstract boolean hasKeepNansOption();
+
     /**
      * Find a time series in the list that matches the target labels for the provided label keys.
+     * If we only have 1 time series, ignore labels.
      * If labelKeys is null or empty, performs full label matching.
      *
      * @param timeSeriesList The list of time series to search
@@ -35,13 +41,14 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
      * @param labelKeys The specific label keys to consider for matching, or null/empty for full matching
      * @return The matching time series, or null if no match found
      */
-    protected TimeSeries findMatchingTimeSeries(List<TimeSeries> timeSeriesList, Labels targetLabels, List<String> labelKeys) {
+    protected List<TimeSeries> findMatchingTimeSeries(List<TimeSeries> timeSeriesList, Labels targetLabels, List<String> labelKeys) {
+        List<TimeSeries> matchingTimeSeriesList = new ArrayList<>();
         for (TimeSeries timeSeries : timeSeriesList) {
             if (labelsMatch(targetLabels, timeSeries.getLabels(), labelKeys)) {
-                return timeSeries;
+                matchingTimeSeriesList.add(timeSeries);
             }
         }
-        return null;
+        return matchingTimeSeriesList;
     }
 
     /**
@@ -78,7 +85,7 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
 
     /**
      * Align two time series by timestamp and process the samples.
-     * Resulting time series includes only timestamps where both left and right samples exist.
+     * Subclass will decide if they want to include NaN value from left/right series.
      * Both left and right time series are expected to be sorted by timestamp.
      *
      * @param leftSeries The left time series
@@ -98,36 +105,55 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
         }
 
         List<Sample> resultSamples = new ArrayList<>();
+        boolean hasKeepNansOptions = hasKeepNansOption();
 
         // Find matching timestamps between the two sorted time series.
         // The input time series is expected to be sorted by timestamp in increasing order.
         int leftIndex = 0;
         int rightIndex = 0;
 
-        while (leftIndex < leftSamples.size() && rightIndex < rightSamples.size()) {
-            Sample leftSample = leftSamples.get(leftIndex);
-            Sample rightSample = rightSamples.get(rightIndex);
+        while (leftIndex < leftSamples.size() || rightIndex < rightSamples.size()) {
+            Sample leftSample = null;
+            Sample rightSample = null;
+            Long leftTimestamp = Long.MAX_VALUE;
+            Long rightTimestamp = Long.MAX_VALUE;
+            if (leftIndex < leftSamples.size()) {
+                leftSample = leftSamples.get(leftIndex);
+                leftTimestamp = leftSample.getTimestamp();
+            }
+            if (rightIndex < rightSamples.size()) {
+                rightSample = rightSamples.get(rightIndex);
+                rightTimestamp = rightSample.getTimestamp();
+            }
 
-            long leftTimestamp = leftSample.getTimestamp();
-            long rightTimestamp = rightSample.getTimestamp();
-
+            Sample resultSample;
             if (leftTimestamp < rightTimestamp) {
-                // Left timestamp is earlier, advance left index
+                // If stage doesn't have keepNans option, we skip processing
+                if (hasKeepNansOptions) {
+                    resultSample = processSamples(leftSample, null);
+                } else {
+                    resultSample = null;
+                }
                 leftIndex++;
+
             } else if (rightTimestamp < leftTimestamp) {
-                // Right timestamp is earlier, advance right index
+                // If stage doesn't have keepNans option, we skip processing
+                if (hasKeepNansOptions) {
+                    resultSample = processSamples(null, rightSample);
+                } else {
+                    resultSample = null;
+                }
                 rightIndex++;
             } else {
-                Sample resultSample = processSamples(leftSample, rightSample);
-                if (resultSample != null) {
-                    resultSamples.add(resultSample);
-                }
+                resultSample = processSamples(leftSample, rightSample);
                 leftIndex++;
                 rightIndex++;
             }
+            if (resultSample != null) {
+                resultSamples.add(resultSample);
+            }
         }
 
-        // Return null if no matching timestamps were found
         if (resultSamples.isEmpty()) {
             return null;
         }
@@ -163,14 +189,6 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
     public List<TimeSeries> process(List<TimeSeries> left, List<TimeSeries> right) {
         if (left.isEmpty() || right.isEmpty()) {
             return new ArrayList<>();
-        }
-
-        List<String> labelKeys = getLabelKeys();
-
-        // If labelKeys are specified, always use the standard label matching logic
-        // regardless of the number of right series
-        if (labelKeys != null && labelKeys.isEmpty() == false) {
-            return processWithLabelMatching(left, right);
         }
 
         // If no label keys are provided and right operand has single series, project all left operand time series onto
@@ -213,10 +231,13 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
      */
     protected List<TimeSeries> processWithLabelMatching(List<TimeSeries> left, List<TimeSeries> right) {
         List<TimeSeries> result = new ArrayList<>();
+        // TODO we need to check intersect of left and right on common tags and use them when no grouping labels
         List<String> labelKeys = getLabelKeys();
 
         for (TimeSeries leftSeries : left) {
-            TimeSeries matchingRightSeries = findMatchingTimeSeries(right, leftSeries.getLabels(), labelKeys);
+            // TODO repeated extracting labels from right series, we should fix by grouping first and iterating over group
+            List<TimeSeries> matchingRightSeriesList = findMatchingTimeSeries(right, leftSeries.getLabels(), labelKeys);
+            TimeSeries matchingRightSeries = mergeMatchingSeries(matchingRightSeriesList);
             if (matchingRightSeries != null) {
                 TimeSeries processedSeries = alignAndProcess(leftSeries, matchingRightSeries);
                 if (processedSeries != null) {
@@ -227,6 +248,8 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
 
         return result;
     }
+
+    protected abstract TimeSeries mergeMatchingSeries(List<TimeSeries> rightTimeSeries);
 
     /**
      * Transform labels before creating the result time series.

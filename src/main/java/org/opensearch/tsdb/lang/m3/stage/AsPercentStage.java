@@ -14,6 +14,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.tsdb.core.model.FloatSample;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.model.Sample;
+import org.opensearch.tsdb.query.aggregator.TimeSeries;
 import org.opensearch.tsdb.query.stage.PipelineStageAnnotation;
 
 import java.io.IOException;
@@ -27,14 +28,9 @@ import java.util.Map;
 public class AsPercentStage extends AbstractBinaryProjectionStage {
     /** The name of this pipeline stage. */
     public static final String NAME = "as_percent";
-
-    /** The parameter name for label keys. */
-    public static final String LABELS_PARAM_KEY = "labels";
-
     /** The type label value to add to all generated time series. */
     private static final String TYPE_LABEL = "type";
     private static final String RATIOS_VALUE = "ratios";
-
     private final String rightOperandReferenceName;
     private final List<String> labelKeys;
 
@@ -68,11 +64,28 @@ public class AsPercentStage extends AbstractBinaryProjectionStage {
         return labelKeys;
     }
 
+    @Override
+    protected boolean hasKeepNansOption() {
+        return false;
+    }
+
+    @Override
+    protected TimeSeries mergeMatchingSeries(List<TimeSeries> rightTimeSeries) {
+        // AsPercent expects only one time series for matched group
+        if (rightTimeSeries.isEmpty()) {
+            return null;
+        } else if (rightTimeSeries.size() == 1) {
+            return rightTimeSeries.get(0);
+        } else {
+            throw new IllegalArgumentException("bucket for asPercent/ratio must have exactly one divisor, got " + rightTimeSeries.size());
+        }
+    }
+
     /**
-     * Process samples to calculate percentage. Both samples are expected to be available.
+     * Process samples to calculate percentage. Both samples are guaranteed to be non-null.
      *
-     * @param leftSample The left sample
-     * @param rightSample The right sample
+     * @param leftSample The left sample (non-null)
+     * @param rightSample The right sample (non-null)
      * @return A FloatSample with percentage value, or null if right value is 0
      */
     @Override
