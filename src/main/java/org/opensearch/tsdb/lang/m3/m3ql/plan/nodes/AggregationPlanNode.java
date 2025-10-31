@@ -49,7 +49,7 @@ public class AggregationPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "AGG(%s, groupBy=%s)", aggType, tags);
+        return String.format(Locale.ROOT, "AGG(%s, groupBy=%s)", aggType, tags);
     }
 
     /**

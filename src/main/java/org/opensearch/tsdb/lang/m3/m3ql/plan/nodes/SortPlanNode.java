@@ -60,7 +60,7 @@ public class SortPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "SORT(%s, %s)", sortBy, sortOrder);
+        return String.format(Locale.ROOT, "SORT(%s, %s)", sortBy, sortOrder);
     }
 
     /**

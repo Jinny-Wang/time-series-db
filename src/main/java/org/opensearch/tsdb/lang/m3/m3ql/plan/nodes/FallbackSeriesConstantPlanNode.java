@@ -47,7 +47,7 @@ public class FallbackSeriesConstantPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "FALLBACK_SERIES(%s)", constantValue);
+        return String.format(Locale.ROOT, "FALLBACK_SERIES(%s)", constantValue);
     }
 
     /**

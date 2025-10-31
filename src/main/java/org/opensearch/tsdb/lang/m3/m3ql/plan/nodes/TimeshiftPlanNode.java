@@ -41,7 +41,7 @@ public class TimeshiftPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "TIMESHIFT(%s)", duration);
+        return String.format(Locale.ROOT, "TIMESHIFT(%s)", duration);
     }
 
     /**

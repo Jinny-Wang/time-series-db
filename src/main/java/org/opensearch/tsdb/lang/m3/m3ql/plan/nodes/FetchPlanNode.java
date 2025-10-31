@@ -50,7 +50,7 @@ public class FetchPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "FETCH(%s, !%s)", matchFilters.toString(), inverseMatchFilters.toString());
+        return String.format(Locale.ROOT, "FETCH(%s, !%s)", matchFilters.toString(), inverseMatchFilters.toString());
     }
 
     /**

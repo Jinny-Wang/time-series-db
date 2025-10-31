@@ -43,7 +43,7 @@ public class ValueFilterPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "VALUE_FILTER(%s, %s)", filter.name(), targetValue);
+        return String.format(Locale.ROOT, "VALUE_FILTER(%s, %s)", filter.name(), targetValue);
     }
 
     /**

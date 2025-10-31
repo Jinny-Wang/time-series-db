@@ -42,7 +42,7 @@ public class AliasPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "ALIAS(%s)", alias);
+        return String.format(Locale.ROOT, "ALIAS(%s)", alias);
     }
 
     /**

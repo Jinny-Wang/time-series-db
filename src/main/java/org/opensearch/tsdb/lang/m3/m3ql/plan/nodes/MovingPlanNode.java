@@ -45,7 +45,7 @@ public class MovingPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "MOVING(%s, %s)", windowSize, aggregationType);
+        return String.format(Locale.ROOT, "MOVING(%s, %s)", windowSize, aggregationType);
     }
 
     /**

@@ -43,7 +43,7 @@ public class AliasByTagsPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "ALIAS_BY_TAGS(%s)", String.join(", ", tagNames));
+        return String.format(Locale.ROOT, "ALIAS_BY_TAGS(%s)", String.join(", ", tagNames));
     }
 
     /**

@@ -41,7 +41,7 @@ public class ScalePlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "SCALE(%s)", scaleFactor);
+        return String.format(Locale.ROOT, "SCALE(%s)", scaleFactor);
     }
 
     /**

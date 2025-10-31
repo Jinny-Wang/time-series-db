@@ -47,7 +47,7 @@ public class HistogramPercentilePlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "HISTOGRAM_PERCENTILE(%s, %s, %s)", bucketId, bucketRange, percentiles);
+        return String.format(Locale.ROOT, "HISTOGRAM_PERCENTILE(%s, %s, %s)", bucketId, bucketRange, percentiles);
     }
 
     /**

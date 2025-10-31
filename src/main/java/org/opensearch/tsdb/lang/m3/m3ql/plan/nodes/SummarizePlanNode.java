@@ -48,7 +48,7 @@ public class SummarizePlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "SUMMARIZE(%s, %s, %s)", interval, function, alignToFrom);
+        return String.format(Locale.ROOT, "SUMMARIZE(%s, %s, %s)", interval, function, alignToFrom);
     }
 
     /**

@@ -42,7 +42,7 @@ public class KeepLastValuePlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "KEEP_LAST_VALUE(%s)", lookback);
+        return String.format(Locale.ROOT, "KEEP_LAST_VALUE(%s)", lookback);
     }
 
     /**

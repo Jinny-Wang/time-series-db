@@ -40,7 +40,7 @@ public class TransformNullPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "TRANSFORM_NULL(%s)", fillValue);
+        return String.format(Locale.ROOT, "TRANSFORM_NULL(%s)", fillValue);
     }
 
     /**

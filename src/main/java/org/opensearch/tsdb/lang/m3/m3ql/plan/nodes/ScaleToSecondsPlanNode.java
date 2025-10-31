@@ -42,7 +42,7 @@ public class ScaleToSecondsPlanNode extends M3PlanNode {
 
     @Override
     public String getExplainName() {
-        return String.format(Locale.getDefault(), "SCALE_TO_SECONDS(%d)", seconds);
+        return String.format(Locale.ROOT, "SCALE_TO_SECONDS(%d)", seconds);
     }
 
     /**
