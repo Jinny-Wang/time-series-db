@@ -22,12 +22,12 @@ import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.transport.client.node.NodeClient;
 import org.opensearch.tsdb.core.utils.Constants;
 import org.opensearch.tsdb.lang.m3.dsl.M3OSTranslator;
+import org.opensearch.tsdb.query.federation.FederationMetadata;
 import org.opensearch.tsdb.query.utils.AggregationNameExtractor;
 
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 import static org.opensearch.rest.RestRequest.Method.GET;
 import static org.opensearch.rest.RestRequest.Method.POST;
@@ -53,12 +53,31 @@ import static org.opensearch.rest.RestRequest.Method.POST;
  *   <li><b>partitions</b> (optional): Comma-separated list of indices to query</li>
  *   <li><b>explain</b> (optional): Return translated DSL instead of executing (default: false)</li>
  *   <li><b>pushdown</b> (optional): Enable pushdown optimizations (default: true)</li>
+ *   <li><b>resolved_partitions</b> (optional, body only): Federation partition resolution info</li>
  * </ul>
  *
  * <h2>Request Body (JSON):</h2>
  * <pre>{@code
  * {
- *   "query": "fetch service:api | sum region"
+ *   "query": "fetch service:api | moving 5m sum",
+ *   "resolved_partitions": {
+ *     "partitions": [
+ *       {
+ *         "fetch_statement": "fetch service:api",
+ *         "partition_windows": [
+ *           {
+ *             "partition_id": "cluster1:index-a",
+ *             "start": 1000000,
+ *             "end": 2000000,
+ *             "routing_keys": [
+ *               {"key": "service", "value": "api"},
+ *               {"key": "region", "value": "us-west"}
+ *             ]
+ *           }
+ *         ]
+ *       }
+ *     ]
+ *   }
  * }
  * }</pre>
  *
@@ -84,6 +103,7 @@ public class RestM3QLAction extends BaseRestHandler {
     private static final String EXPLAIN_PARAM = "explain";
     private static final String PUSHDOWN_PARAM = "pushdown";
     private static final String PROFILE_PARAM = "profile";
+    private static final String RESOLVED_PARTITIONS_PARAM = "resolved_partitions";
 
     // Default parameter values
     private static final String DEFAULT_START_TIME = "now-5m";
@@ -180,8 +200,11 @@ public class RestM3QLAction extends BaseRestHandler {
      * @throws IOException if parsing fails
      */
     private RequestParams parseRequestParams(RestRequest request) throws IOException {
-        // Extract M3QL query from body or URL parameter
-        String query = extractM3QLQuery(request);
+        // Parse request body (if present) to extract query and resolved_partitions in one pass
+        RequestBody requestBody = parseRequestBody(request);
+
+        // Extract query from body or fall back to URL parameter
+        String query = (requestBody != null && requestBody.query() != null) ? requestBody.query() : request.param(QUERY_PARAM);
 
         // Capture base time once for consistent "now" across all time parameters in this request
         long nowMillis = System.currentTimeMillis();
@@ -208,7 +231,10 @@ public class RestM3QLAction extends BaseRestHandler {
         boolean pushdown = request.paramAsBoolean(PUSHDOWN_PARAM, true);
         boolean profile = request.paramAsBoolean(PROFILE_PARAM, false);
 
-        return new RequestParams(query, startMs, endMs, stepMs, indices, explain, pushdown, profile);
+        // Extract resolved partitions from request body (implements FederationMetadata)
+        FederationMetadata federationMetadata = (requestBody != null) ? requestBody.resolvedPartitions() : null;
+
+        return new RequestParams(query, startMs, endMs, stepMs, indices, explain, pushdown, profile, federationMetadata);
     }
 
     /**
@@ -227,26 +253,20 @@ public class RestM3QLAction extends BaseRestHandler {
     }
 
     /**
-     * Extracts the M3QL query from the request body or URL parameter.
+     * Parses the request body (both query and resolved_partitions) in a single pass.
      *
      * @param request the REST request
-     * @return the M3QL query string, or null if not found
-     * @throws IOException if parsing the request body fails
+     * @return parsed RequestBody, or null if no body content
+     * @throws IOException if parsing fails
      */
-    private String extractM3QLQuery(RestRequest request) throws IOException {
-        // Try request body first
-        if (request.hasContent()) {
-            try (XContentParser parser = request.contentParser()) {
-                Map<String, Object> bodyMap = parser.map();
-                Object queryObj = bodyMap.get(QUERY_PARAM);
-                if (queryObj != null) {
-                    return queryObj.toString();
-                }
-            }
+    private RequestBody parseRequestBody(RestRequest request) throws IOException {
+        if (!request.hasContent()) {
+            return null;
         }
 
-        // Fall back to URL parameter
-        return request.param(QUERY_PARAM);
+        try (XContentParser parser = request.contentParser()) {
+            return RequestBody.parse(parser);
+        }
     }
 
     /**
@@ -262,7 +282,8 @@ public class RestM3QLAction extends BaseRestHandler {
             params.endMs,
             params.stepMs,
             params.pushdown,
-            params.profile
+            params.profile,
+            params.federationMetadata
         );
         return M3OSTranslator.translate(params.query, translatorParams);
     }
@@ -313,6 +334,6 @@ public class RestM3QLAction extends BaseRestHandler {
      * Internal record holding parsed request parameters.
      */
     protected record RequestParams(String query, long startMs, long endMs, long stepMs, String[] indices, boolean explain, boolean pushdown,
-        boolean profile) {
+        boolean profile, FederationMetadata federationMetadata) {
     }
 }

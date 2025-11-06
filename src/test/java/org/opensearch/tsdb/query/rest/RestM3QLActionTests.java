@@ -15,10 +15,13 @@ import org.opensearch.core.action.ActionListener;
 import org.opensearch.core.rest.RestStatus;
 import org.opensearch.rest.RestHandler.Route;
 import org.opensearch.rest.RestRequest;
+import org.opensearch.search.aggregations.AggregatorFactories;
+import org.opensearch.search.builder.SearchSourceBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.rest.FakeRestChannel;
 import org.opensearch.test.rest.FakeRestRequest;
 import org.opensearch.transport.client.node.NodeClient;
+import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregationBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregationBuilder;
 
 import java.util.List;
@@ -27,22 +30,24 @@ import java.util.function.Consumer;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 
 /**
- * Unit tests for RestM3QLAction.
+ * Unit tests for {@link RestM3QLAction}, the REST handler for M3QL query execution.
  *
- * <p>Tests cover:
+ * <p>Test coverage includes:
  * <ul>
- *   <li>Handler registration and naming</li>
- *   <li>Route registration</li>
- *   <li>Query parameter parsing</li>
- *   <li>Request body parsing</li>
- *   <li>Error handling</li>
- *   <li>Explain mode</li>
+ *   <li>REST handler registration (routes, methods, naming)</li>
+ *   <li>Query parameter parsing (query, time range, step, partitions)</li>
+ *   <li>Request body parsing with XContent</li>
+ *   <li>Resolved partitions handling and automatic pushdown control</li>
+ *   <li>Query precedence (body vs URL parameters)</li>
+ *   <li>Explain mode functionality</li>
+ *   <li>Error handling for invalid inputs</li>
  * </ul>
  */
 public class RestM3QLActionTests extends OpenSearchTestCase {
@@ -535,6 +540,264 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
         FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
             .withPath("/_m3ql")
             .withParams(Map.of("query", "fetch service:api", "profile", "true"))
+            .withContent(new BytesArray(jsonBody), XContentType.JSON)
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.OK));
+    }
+
+    // ========== Resolved Partitions Tests ==========
+
+    /**
+     * Test resolved_partitions with routing keys isolated to single partitions.
+     * Expected: Pushdown should remain enabled (stages in unfold).
+     */
+    public void testResolvedPartitionsWithIsolatedRoutingKeys() throws Exception {
+        NodeClient mockClient = setupMockClientWithAssertion(searchRequest -> {
+            assertNotNull("SearchRequest should not be null", searchRequest);
+            assertNotNull("SearchRequest source should not be null", searchRequest.source());
+
+            SearchSourceBuilder source = searchRequest.source();
+            AggregatorFactories.Builder aggs = source.aggregations();
+
+            // Get unfold aggregation
+            TimeSeriesUnfoldAggregationBuilder unfoldAgg = (TimeSeriesUnfoldAggregationBuilder) aggs.getAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesUnfoldAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Unfold aggregation should exist", unfoldAgg);
+
+            // Pushdown enabled: stages should be in unfold aggregation
+            assertNotNull("Stages should be present in unfold when no collision", unfoldAgg.getStages());
+            assertThat("Stages should not be empty in unfold when no collision", unfoldAgg.getStages().size(), greaterThan(0));
+        });
+
+        String jsonBody = """
+            {
+              "query": "fetch service:api | moving 5m sum",
+              "resolved_partitions": {
+                "partitions": [
+                  {
+                    "fetch_statement": "fetch service:api",
+                    "partition_windows": [
+                      {
+                        "partition_id": "cluster1:index-a",
+                        "start": 1000000,
+                        "end": 2000000,
+                        "routing_keys": [
+                          {"key": "service", "value": "api"},
+                          {"key": "region", "value": "us-west"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+            """;
+
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
+            .withPath("/_m3ql")
+            .withContent(new BytesArray(jsonBody), XContentType.JSON)
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.OK));
+    }
+
+    /**
+     * Test resolved_partitions with routing key spanning multiple partitions.
+     * Expected: Pushdown should be automatically disabled (stages in coordinator, not in unfold).
+     */
+    public void testResolvedPartitionsWithRoutingKeySpanningMultiplePartitions() throws Exception {
+        NodeClient mockClient = setupMockClientWithAssertion(searchRequest -> {
+            assertNotNull("SearchRequest should not be null", searchRequest);
+            assertNotNull("SearchRequest source should not be null", searchRequest.source());
+
+            SearchSourceBuilder source = searchRequest.source();
+            AggregatorFactories.Builder aggs = source.aggregations();
+
+            // Get unfold aggregation
+            TimeSeriesUnfoldAggregationBuilder unfoldAgg = (TimeSeriesUnfoldAggregationBuilder) aggs.getAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesUnfoldAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Unfold aggregation should exist", unfoldAgg);
+
+            // Pushdown disabled: no stages in unfold
+            assertNull("Stages should not be present in unfold when collision detected", unfoldAgg.getStages());
+
+            // Verify stages are in coordinator instead
+            TimeSeriesCoordinatorAggregationBuilder coordAgg = (TimeSeriesCoordinatorAggregationBuilder) aggs
+                .getPipelineAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesCoordinatorAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Coordinator aggregation should exist", coordAgg);
+            assertThat("Stages should be in coordinator when collision detected", coordAgg.getStages().size(), greaterThan(0));
+        });
+
+        String jsonBody = """
+            {
+              "query": "fetch service:api | moving 5m sum",
+              "resolved_partitions": {
+                "partitions": [
+                  {
+                    "fetch_statement": "fetch service:api",
+                    "partition_windows": [
+                      {
+                        "partition_id": "cluster1:index-a",
+                        "start": 1000000,
+                        "end": 2000000,
+                        "routing_keys": [
+                          {"key": "service", "value": "api"}
+                        ]
+                      },
+                      {
+                        "partition_id": "cluster2:index-b",
+                        "start": 1000000,
+                        "end": 2000000,
+                        "routing_keys": [
+                          {"key": "service", "value": "api"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+            """;
+
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
+            .withPath("/_m3ql")
+            .withContent(new BytesArray(jsonBody), XContentType.JSON)
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.OK));
+    }
+
+    /**
+     * Test that resolved_partitions automatically overrides explicit pushdown=true parameter.
+     * When routing keys span partitions, pushdown should be disabled regardless of URL param.
+     */
+    public void testResolvedPartitionsOverridesPushdownParameter() throws Exception {
+        NodeClient mockClient = setupMockClientWithAssertion(searchRequest -> {
+            assertNotNull("SearchRequest should not be null", searchRequest);
+            assertNotNull("SearchRequest source should not be null", searchRequest.source());
+
+            SearchSourceBuilder source = searchRequest.source();
+            AggregatorFactories.Builder aggs = source.aggregations();
+
+            // Get unfold aggregation
+            TimeSeriesUnfoldAggregationBuilder unfoldAgg = (TimeSeriesUnfoldAggregationBuilder) aggs.getAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesUnfoldAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Unfold aggregation should exist", unfoldAgg);
+
+            // Despite pushdown=true in URL, collision should disable it
+            assertNull("Unfold should not contain stages despite pushdown=true URL param", unfoldAgg.getStages());
+
+            // Verify stages are in coordinator instead
+            TimeSeriesCoordinatorAggregationBuilder coordAgg = (TimeSeriesCoordinatorAggregationBuilder) aggs
+                .getPipelineAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesCoordinatorAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Coordinator aggregation should exist", coordAgg);
+            assertThat("Stages should be in coordinator when collision detected", coordAgg.getStages().size(), greaterThan(0));
+        });
+
+        String jsonBody = """
+            {
+              "query": "fetch service:api | moving 5m sum",
+              "resolved_partitions": {
+                "partitions": [
+                  {
+                    "fetch_statement": "fetch service:api",
+                    "partition_windows": [
+                      {
+                        "partition_id": "cluster1:index-a",
+                        "start": 1000000,
+                        "end": 2000000,
+                        "routing_keys": [{"key": "service", "value": "api"}]
+                      },
+                      {
+                        "partition_id": "cluster2:index-b",
+                        "start": 1000000,
+                        "end": 2000000,
+                        "routing_keys": [{"key": "service", "value": "api"}]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+            """;
+
+        // Explicitly set pushdown=true in URL params, but routing keys span partitions, the params will be overridden by the
+        // resolved_partitions
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
+            .withPath("/_m3ql")
+            .withParams(Map.of("pushdown", "true"))
+            .withContent(new BytesArray(jsonBody), XContentType.JSON)
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        assertThat(channel.capturedResponse().status(), equalTo(RestStatus.OK));
+    }
+
+    /**
+     * Test that null query in body falls back to URL param.
+     * Ensures resolved_partitions can be provided without query in body.
+     */
+    public void testNullQueryInBodyFallsBackToUrlParam() throws Exception {
+        NodeClient mockClient = setupMockClientWithAssertion(searchRequest -> {
+            assertNotNull("SearchRequest should not be null", searchRequest);
+            assertNotNull("SearchRequest source should not be null", searchRequest.source());
+
+            SearchSourceBuilder source = searchRequest.source();
+            AggregatorFactories.Builder aggs = source.aggregations();
+
+            // Get unfold aggregation
+            TimeSeriesUnfoldAggregationBuilder unfoldAgg = (TimeSeriesUnfoldAggregationBuilder) aggs.getAggregatorFactories()
+                .stream()
+                .filter(agg -> agg instanceof TimeSeriesUnfoldAggregationBuilder)
+                .findFirst()
+                .orElse(null);
+            assertNotNull("Unfold aggregation should exist", unfoldAgg);
+
+            // With pipeline stage and no resolved_partitions, pushdown should be enabled
+            assertNotNull("Unfold should have stages for pushdown", unfoldAgg.getStages());
+            assertThat("Unfold stages should not be empty", unfoldAgg.getStages().size(), greaterThan(0));
+        });
+
+        String jsonBody = """
+            {
+              "resolved_partitions": {
+                "partitions": []
+              }
+            }
+            """;
+
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.POST)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api | sum cluster"))
             .withContent(new BytesArray(jsonBody), XContentType.JSON)
             .build();
         FakeRestChannel channel = new FakeRestChannel(request, true, 1);

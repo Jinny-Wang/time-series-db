@@ -44,6 +44,11 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.ValueFilterPlanNode;
 import org.opensearch.tsdb.lang.m3.stage.MovingStage;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregationBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregationBuilder;
+import org.opensearch.tsdb.query.federation.FederationMetadata;
+import org.opensearch.tsdb.query.rest.ResolvedPartitions;
+import org.opensearch.tsdb.query.rest.ResolvedPartitions.PartitionWindow;
+import org.opensearch.tsdb.query.rest.ResolvedPartitions.ResolvedPartition;
+import org.opensearch.tsdb.query.rest.ResolvedPartitions.RoutingKey;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -65,7 +70,8 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
         2000000L, // endTime
         10000L,   // step
         true,     // pushdown
-        true      // profile
+        true,     // profile
+        null      // federationMetadata (no federation in tests)
     );
 
     private SourceBuilderVisitor visitor;
@@ -638,7 +644,7 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
         movingPlanNode.addChild(fetchPlanNode);
 
         SourceBuilderVisitor visitor = new SourceBuilderVisitor(
-            new M3OSTranslator.Params(Constants.Time.DEFAULT_TIME_UNIT, 1000000L, 2000000L, 10000L, false, false)
+            new M3OSTranslator.Params(Constants.Time.DEFAULT_TIME_UNIT, 1000000L, 2000000L, 10000L, false, false, null)
         );
 
         SourceBuilderVisitor.ComponentHolder results = visitor.visit(movingPlanNode);
@@ -673,7 +679,7 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
         movingPlanNode.addChild(fetchPlanNode);
 
         SourceBuilderVisitor visitor = new SourceBuilderVisitor(
-            new M3OSTranslator.Params(TimeUnit.SECONDS, 1000000L, 2000000L, 10000L, true, false)
+            new M3OSTranslator.Params(TimeUnit.SECONDS, 1000000L, 2000000L, 10000L, true, false, null)
         );
 
         SourceBuilderVisitor.ComponentHolder results = visitor.visit(movingPlanNode);
@@ -733,6 +739,51 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
 
         // Should not throw an exception
         assertNotNull(visitor.visit(planNode));
+    }
+
+    /**
+     * Test shouldDisablePushdown when partitions do NOT overlap.
+     */
+    public void testShouldDisablePushdownWithNoOverlap() {
+        RoutingKey serviceApi = new RoutingKey("service", "api");
+        PartitionWindow window = new PartitionWindow("cluster1:index-a", 1000000L, 2000000L, List.of(serviceApi));
+        ResolvedPartition partition = new ResolvedPartition("fetch service:api", List.of(window));
+        FederationMetadata federationMetadata = new ResolvedPartitions(List.of(partition));
+
+        M3OSTranslator.Params params = new M3OSTranslator.Params(
+            Constants.Time.DEFAULT_TIME_UNIT,
+            1000000L,
+            2000000L,
+            10000L,
+            true,
+            false,
+            federationMetadata
+        );
+
+        assertFalse(SourceBuilderVisitor.shouldDisablePushdown(params));
+    }
+
+    /**
+     * Test shouldDisablePushdown when partitions overlap.
+     */
+    public void testShouldDisablePushdownWithOverlappingPartitions() {
+        RoutingKey serviceApi = new RoutingKey("service", "api");
+        PartitionWindow window1 = new PartitionWindow("cluster1:index-a", 1000000L, 2500000L, List.of(serviceApi));
+        PartitionWindow window2 = new PartitionWindow("cluster2:index-b", 2000000L, 3000000L, List.of(serviceApi));
+        ResolvedPartition partition = new ResolvedPartition("fetch service:api", List.of(window1, window2));
+        FederationMetadata federationMetadata = new ResolvedPartitions(List.of(partition));
+
+        M3OSTranslator.Params params = new M3OSTranslator.Params(
+            Constants.Time.DEFAULT_TIME_UNIT,
+            1000000L,
+            2000000L,
+            10000L,
+            true,
+            false,
+            federationMetadata
+        );
+
+        assertTrue(SourceBuilderVisitor.shouldDisablePushdown(params));
     }
 
     /**

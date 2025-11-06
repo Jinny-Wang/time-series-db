@@ -17,6 +17,7 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.M3ASTConverter;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.M3PlannerContext;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.M3PlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.optimizer.M3PlanOptimizer;
+import org.opensearch.tsdb.query.federation.FederationMetadata;
 
 import java.util.concurrent.TimeUnit;
 
@@ -67,8 +68,11 @@ public class M3OSTranslator {
      * @param endTime Query end time in the specified time unit
      * @param step Step interval for aggregations in the specified time unit
      * @param pushdown Enable pushdown optimizations
+     * @param profile Enable profiling
+     * @param federationMetadata Metadata about federated query execution across partitions (nullable)
      */
-    public record Params(TimeUnit timeUnit, long startTime, long endTime, long step, boolean pushdown, boolean profile) {
+    public record Params(TimeUnit timeUnit, long startTime, long endTime, long step, boolean pushdown, boolean profile,
+        FederationMetadata federationMetadata) {
 
         /**
          * Validation for params.
@@ -85,9 +89,11 @@ public class M3OSTranslator {
          * @param endTime Query end time in default time unit
          * @param step Step interval for aggregations in default time unit
          * @param pushdown Enable pushdown optimizations
+         * @param profile Enable profiling
+         * @param federationMetadata Metadata about federated query execution across partitions (nullable)
          */
-        public Params(long startTime, long endTime, long step, boolean pushdown, boolean profile) {
-            this(Constants.Time.DEFAULT_TIME_UNIT, startTime, endTime, step, pushdown, profile);
+        public Params(long startTime, long endTime, long step, boolean pushdown, boolean profile, FederationMetadata federationMetadata) {
+            this(Constants.Time.DEFAULT_TIME_UNIT, startTime, endTime, step, pushdown, profile, federationMetadata);
         }
     }
 }

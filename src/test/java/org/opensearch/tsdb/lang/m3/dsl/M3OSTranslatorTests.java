@@ -73,7 +73,7 @@ public class M3OSTranslatorTests extends OpenSearchTestCase {
         try {
             SearchSourceBuilder searchSourceBuilder = M3OSTranslator.translate(
                 query,
-                new M3OSTranslator.Params(Constants.Time.DEFAULT_TIME_UNIT, START_TIME, END_TIME, STEP, true, false)
+                new M3OSTranslator.Params(Constants.Time.DEFAULT_TIME_UNIT, START_TIME, END_TIME, STEP, true, false, null)
             );
             JsonNode expectedJson = mapper.readTree(expected);
             JsonNode actualJson = mapper.readTree(searchSourceBuilder.toString());

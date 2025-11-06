@@ -248,7 +248,7 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         // Add stages to UnfoldPipelineAggregation based on pushdown setting
         List<UnaryPipelineStage> unfoldStages = new ArrayList<>();
 
-        if (params.pushdown()) {
+        if (!shouldDisablePushdown(params)) {
             // Normal pushdown behavior: add stages until we hit a coordinator-only or global aggregation
             while (!stageStack.isEmpty() && !stageStack.peek().isCoordinatorOnly() && !stageStack.peek().isGlobalAggregation()) {
                 unfoldStages.add(stageStack.pop());
@@ -708,6 +708,23 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
     }
 
     private record TimeRange(long start, long end) {
+    }
+
+    /**
+     * Determines whether pushdown should be disabled based on query parameters and federation metadata.
+     *
+     * <p>Pushdown is disabled if:
+     * <ul>
+     *   <li>The pushdown flag is explicitly set to false in params, OR</li>
+     *   <li>Partitions overlap (same time series exists across multiple partitions with temporal overlap,
+     *       which would produce incorrect results for operations requiring historical context)</li>
+     * </ul>
+     *
+     * @param params the translator parameters containing pushdown flag and federation metadata
+     * @return true if pushdown should be disabled, false otherwise
+     */
+    public static boolean shouldDisablePushdown(M3OSTranslator.Params params) {
+        return !params.pushdown() || (params.federationMetadata() != null && params.federationMetadata().hasOverlappingPartitions());
     }
 
     private long getDurationAsLong(Duration duration) {
