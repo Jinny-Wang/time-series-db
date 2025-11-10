@@ -1378,7 +1378,7 @@ public class TSDBEngine extends Engine {
                 userData.put(key, value);
                 metadataIndexWriter.setLiveCommitData(userData.entrySet());
                 metadataIndexWriter.commit();
-                lastCommittedSegmentInfos = SegmentInfos.readLatestCommit(store.directory());
+                lastCommittedSegmentInfos = SegmentInfos.readLatestCommit(getStore().directory());
             } finally {
                 segmentInfosLock.unlock();
             }
