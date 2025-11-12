@@ -191,9 +191,10 @@ public class Head {
     /**
      * Closes all MemChunks in the head that will not have new samples added.
      *
+     * @param allowDropEmptySeries whether to allow dropping empty series after closing chunks
      * @return the minimum sequence number of all in-memory samples after closing chunks
      */
-    public long closeHeadChunks() {
+    public long closeHeadChunks(boolean allowDropEmptySeries) {
         List<MemSeries> allSeries = getSeriesMap().getSeriesMap();
         IndexChunksResult indexChunksResult = indexCloseableChunks(allSeries);
 
@@ -210,7 +211,9 @@ public class Head {
         }
 
         // TODO: delegate removal to ReferenceManager
-        dropEmptySeries(minSeqNoToKeep);
+        if (allowDropEmptySeries) {
+            dropEmptySeries(minSeqNoToKeep);
+        }
 
         // TODO consider returning in an incremental fashion, to avoid no-op reprocessing if the server crashes between CCI commits
         return minSeqNoToKeep;

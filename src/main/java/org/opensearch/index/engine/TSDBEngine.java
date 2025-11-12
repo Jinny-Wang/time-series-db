@@ -80,6 +80,8 @@ import java.util.function.BiFunction;
  */
 public class TSDBEngine extends Engine {
     private static final String METRICS_STORE_DIR = "metrics";
+    // TODO: Instead of checking refresh source, modify OS core to use engineConfig to supply shard state
+    private static final String POST_RECOVERY_REFRESH_SOURCE = "post_recovery";
 
     // Engine state management
     private final AtomicLong maxSeqNoOfUpdatesOrDeletes = new AtomicLong(0);
@@ -87,6 +89,7 @@ public class TSDBEngine extends Engine {
     private final AtomicLong maxUnsafeAutoIdTimestamp = new AtomicLong(-1);
     private final CounterMetric throttleTimeMillisMetric = new CounterMetric();
     private final AtomicBoolean isThrottled = new AtomicBoolean(false);
+    private volatile boolean postRecoveryRefreshCompleted = false;
     private final TranslogManager translogManager;
     private final String historyUUID;
     private final LocalCheckpointTracker localCheckpointTracker;
@@ -185,11 +188,11 @@ public class TSDBEngine extends Engine {
             success = true;
         } finally {
             if (success == false) {
-                if (metadataIndexWriter != null) {
-                    metadataIndexWriter.close();
-                }
                 if (head != null) {
                     head.close();
+                }
+                if (metadataIndexWriter != null) {
+                    metadataIndexWriter.close();
                 }
                 if (isClosed.get() == false) {
                     // decrement store reference as engine initialization failed
@@ -485,6 +488,10 @@ public class TSDBEngine extends Engine {
      */
     @Override
     public void refresh(String source) throws EngineException {
+        if (POST_RECOVERY_REFRESH_SOURCE.equals(source)) {
+            postRecoveryRefreshCompleted = true;
+            logger.info("Post-recovery refresh completed, empty series dropping now allowed during flush");
+        }
         refreshInternal(source, SearcherScope.EXTERNAL, true);
     }
 
@@ -572,7 +579,7 @@ public class TSDBEngine extends Engine {
 
             logger.debug("MMAPing head chunks");
             // TODO: Long.MAX_VALUE is returned as checkpoint if there are no chunks? might need fix
-            long checkpoint = head.closeHeadChunks();
+            long checkpoint = head.closeHeadChunks(postRecoveryRefreshCompleted);
             translogManager.getDeletionPolicy().setLocalCheckpointOfSafeCommit(checkpoint);
             // TODO: replace this log with a metric
             logger.debug("Setting local checkpoint of safe commit to {}", checkpoint);

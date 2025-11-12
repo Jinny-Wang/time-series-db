@@ -119,7 +119,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         head.getLiveSeriesIndex().getDirectoryReaderManager().maybeRefreshBlocking();
 
-        head.closeHeadChunks();
+        head.closeHeadChunks(true);
         closedChunkIndexManager.getReaderManagers().forEach(rm -> {
             try {
                 rm.maybeRefreshBlocking();
@@ -196,7 +196,7 @@ public class HeadTests extends OpenSearchTestCase {
         assertNotNull("Series with last append at seqNo 10 exists", head.getSeriesMap().getByReference(seriesWithData.stableHash()));
 
         // Two chunks were created, minSeqNo of all in-memory chunks is >0 but <9
-        head.closeHeadChunks();
+        head.closeHeadChunks(true);
         assertNull("Series with last append at seqNo 0 is removed", head.getSeriesMap().getByReference(seriesNoData.stableHash()));
         assertNotNull("Series with last append at seqNo 9 exists", head.getSeriesMap().getByReference(seriesWithData.stableHash()));
         assertEquals("One series remain in the series map", 1, head.getSeriesMap().size());
@@ -204,7 +204,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         // Simulate advancing the time, so the series with data may have it's last chunk closed
         head.updateMaxSeenTimestamp(TEST_CHUNK_EXPIRY.getMillis() + 1000L);
-        head.closeHeadChunks();
+        head.closeHeadChunks(true);
         assertNull("Series with last append at seqNo 9 is removed", head.getSeriesMap().getByReference(seriesWithData.stableHash()));
         assertTrue("No series remain in LiveSeriesIndex", getChunks(head, closedChunkIndexManager).isEmpty());
         assertEquals("No series remain in the series map", 0, head.getSeriesMap().size());
@@ -247,7 +247,7 @@ public class HeadTests extends OpenSearchTestCase {
         }
 
         // 10 samples per chunk, so closing head chunks at 12 should leave 2 in-memory in the live chunk
-        long minSeqNo = head.closeHeadChunks();
+        long minSeqNo = head.closeHeadChunks(true);
         assertEquals("10 samples were MMAPed, replay from minSeqNo + 1", 9, minSeqNo);
         head.close();
         closedChunkIndexManager.close();
@@ -334,7 +334,7 @@ public class HeadTests extends OpenSearchTestCase {
         }
 
         // Validate 4 indexes are created and closeHeadChunks return correct minSeq.
-        var minSeqNo = head.closeHeadChunks();
+        var minSeqNo = head.closeHeadChunks(true);
         assertEquals(30, minSeqNo);
         assertEquals(4, closedChunkIndexManager.getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now()).size());
 
@@ -353,7 +353,7 @@ public class HeadTests extends OpenSearchTestCase {
         doReturn(false).when(closedChunkIndexManager).addMemChunk(memSeries2, closableChunks.get(1));
 
         // minSeq should increase by 8 (31+7)
-        minSeqNo = head.closeHeadChunks();
+        minSeqNo = head.closeHeadChunks(true);
         assertEquals(38, minSeqNo);
         head.close();
 

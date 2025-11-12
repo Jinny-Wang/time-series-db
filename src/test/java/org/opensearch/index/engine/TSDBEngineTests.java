@@ -935,4 +935,46 @@ public class TSDBEngineTests extends EngineTestCase {
             throw new RuntimeException("Failed to check segments file existence", e);
         }
     }
+
+    /**
+     * Test that post_recovery refresh enables empty series dropping in flush.
+     */
+    public void testPostRecoveryRefreshEnablesSeriesDropping() throws Exception {
+        // Index samples
+        publishSample(0, createSampleJson(series1, 1000L, 100.0));
+        publishSample(1, createSampleJson(series2, 2000L, 200.0));
+
+        assertEquals("Should have 2 series initially", 2L, metricsEngine.getHead().getNumSeries());
+
+        // Flush without post_recovery refresh - empty series should NOT be dropped even if empty
+        metricsEngine.getHead().updateMaxSeenTimestamp(Long.MAX_VALUE);
+        metricsEngine.flush(true, true);
+        assertEquals("Should still have 2 series after flush without post_recovery refresh", 2L, metricsEngine.getHead().getNumSeries());
+
+        // Call post_recovery refresh
+        metricsEngine.refresh("post_recovery");
+        // Now flush again - series dropping should be allowed
+        metricsEngine.flush(true, true);
+
+        assertEquals("Should have 0 series after flush with post_recovery refresh", 0L, metricsEngine.getHead().getNumSeries());
+    }
+
+    /**
+     * Test that regular refresh does not enable series dropping.
+     */
+    public void testRegularRefreshDoesNotEnableSeriesDropping() throws Exception {
+        // Index samples
+        publishSample(0, createSampleJson(series1, 1000L, 100.0));
+
+        // Call regular refresh (not post_recovery)
+        metricsEngine.getHead().updateMaxSeenTimestamp(Long.MAX_VALUE);
+        metricsEngine.refresh("regular_refresh");
+        metricsEngine.refresh("test_refresh");
+        metricsEngine.maybeRefresh("maybe_refresh");
+
+        // Flush should still have series dropping disabled
+        metricsEngine.flush(true, true);
+
+        assertEquals("Should still have 1 series after regular refresh and flush", 1L, metricsEngine.getHead().getNumSeries());
+    }
 }
