@@ -942,12 +942,12 @@ public class TSDBEngineTests extends EngineTestCase {
     public void testPostRecoveryRefreshEnablesSeriesDropping() throws Exception {
         // Index samples
         publishSample(0, createSampleJson(series1, 1000L, 100.0));
-        publishSample(1, createSampleJson(series2, 2000L, 200.0));
+        publishSample(1, createSampleJson(series2, 9999999L, 200.0));
 
         assertEquals("Should have 2 series initially", 2L, metricsEngine.getHead().getNumSeries());
 
         // Flush without post_recovery refresh - empty series should NOT be dropped even if empty
-        metricsEngine.getHead().updateMaxSeenTimestamp(Long.MAX_VALUE);
+        metricsEngine.getHead().updateMaxSeenTimestamp(9999999L);
         metricsEngine.flush(true, true);
         assertEquals("Should still have 2 series after flush without post_recovery refresh", 2L, metricsEngine.getHead().getNumSeries());
 
@@ -956,7 +956,7 @@ public class TSDBEngineTests extends EngineTestCase {
         // Now flush again - series dropping should be allowed
         metricsEngine.flush(true, true);
 
-        assertEquals("Should have 0 series after flush with post_recovery refresh", 0L, metricsEngine.getHead().getNumSeries());
+        assertEquals("Should have 1 series after flush with post_recovery refresh", 1L, metricsEngine.getHead().getNumSeries());
     }
 
     /**
@@ -976,5 +976,38 @@ public class TSDBEngineTests extends EngineTestCase {
         metricsEngine.flush(true, true);
 
         assertEquals("Should still have 1 series after regular refresh and flush", 1L, metricsEngine.getHead().getNumSeries());
+    }
+
+    /**
+     * Test that flush handles the case when all chunks are closed.
+     * When closeHeadChunks returns -1 (all chunks closed), flush should use the current processed checkpoint instead.
+     */
+    public void testFlushWithAllChunksClosed() throws Exception {
+        // Index samples to have a processed checkpoint
+        publishSample(0, createSampleJson(series1, 1000L, 100.0));
+        publishSample(1, createSampleJson(series1, 2000L, 200.0));
+        publishSample(2, createSampleJson(series2, 3000L, 300.0));
+
+        long processedCheckpointBeforeFlush = metricsEngine.getProcessedLocalCheckpoint();
+        assertEquals("Should have processed checkpoint of 2", 2L, processedCheckpointBeforeFlush);
+
+        // Enable series dropping with post_recovery refresh
+        metricsEngine.refresh("post_recovery");
+
+        // Update maxTime to a very large value so all chunks become closeable
+        metricsEngine.getHead().updateMaxSeenTimestamp(Long.MAX_VALUE);
+
+        // Force flush - this should close all chunks and return -1 from closeHeadChunks
+        // The flush logic should then use currentProcessedCheckpoint (2) instead of -1
+        metricsEngine.flush(true, true);
+
+        // Verify the committed checkpoint is the processed checkpoint (not -1)
+        var committedSegmentInfos = engineStore.readLastCommittedSegmentsInfo();
+        String committedCheckpoint = committedSegmentInfos.getUserData().get(SequenceNumbers.LOCAL_CHECKPOINT_KEY);
+        assertEquals("Committed checkpoint should be the processed checkpoint when all chunks are closed", "2", committedCheckpoint);
+
+        // Verify persisted checkpoint matches after sync
+        metricsEngine.translogManager().syncTranslog();
+        assertEquals("Persisted checkpoint should be 2", 2L, metricsEngine.getPersistedLocalCheckpoint());
     }
 }

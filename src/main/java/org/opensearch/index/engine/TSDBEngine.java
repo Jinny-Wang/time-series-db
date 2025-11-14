@@ -578,8 +578,18 @@ public class TSDBEngine extends Engine {
             }
 
             logger.debug("MMAPing head chunks");
-            // TODO: Long.MAX_VALUE is returned as checkpoint if there are no chunks? might need fix
+
+            // Retrieve the processed local checkpoint before calling head.closeHeadChunks().
+            // This will be used if the returned checkpoint is -1, indicating all chunks at that time is closed.
+            long currentProcessedCheckpoint = localCheckpointTracker.getProcessedCheckpoint();
+
             long checkpoint = head.closeHeadChunks(postRecoveryRefreshCompleted);
+
+            // checkpoint is -1 if all chunks are closed. In this case, use processed checkpoint before closing the chunks
+            if (checkpoint == -1) {
+                checkpoint = currentProcessedCheckpoint;
+            }
+
             translogManager.getDeletionPolicy().setLocalCheckpointOfSafeCommit(checkpoint);
             // TODO: replace this log with a metric
             logger.debug("Setting local checkpoint of safe commit to {}", checkpoint);

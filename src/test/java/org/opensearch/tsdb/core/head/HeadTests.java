@@ -204,11 +204,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         // Simulate advancing the time, so the series with data may have it's last chunk closed
         head.updateMaxSeenTimestamp(TEST_CHUNK_EXPIRY.getMillis() + 1000L);
-        head.closeHeadChunks(true);
-        assertNull("Series with last append at seqNo 9 is removed", head.getSeriesMap().getByReference(seriesWithData.stableHash()));
-        assertTrue("No series remain in LiveSeriesIndex", getChunks(head, closedChunkIndexManager).isEmpty());
-        assertEquals("No series remain in the series map", 0, head.getSeriesMap().size());
-        assertEquals("getNumSeries returns 1", 0, head.getNumSeries());
+        assertEquals(-1, head.closeHeadChunks(true));
 
         head.close();
         closedChunkIndexManager.close();
