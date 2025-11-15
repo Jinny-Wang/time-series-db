@@ -68,7 +68,8 @@ public class TimeSeriesUnfoldAggregationBuilderTests extends BaseAggregationTest
 
         String name = randomAlphaOfLengthBetween(3, 20);
         long minTimestamp = randomLongBetween(0, 5000L);
-        long maxTimestamp = randomLongBetween(minTimestamp, minTimestamp + 5000L);
+        // Ensure maxTimestamp > minTimestamp (add at least 1 to satisfy validation)
+        long maxTimestamp = randomLongBetween(minTimestamp + 1, minTimestamp + 5000L);
         long step = randomLongBetween(1L, 100L) * 10;
 
         return new TimeSeriesUnfoldAggregationBuilder(name, stages, minTimestamp, maxTimestamp, step);
@@ -174,6 +175,37 @@ public class TimeSeriesUnfoldAggregationBuilderTests extends BaseAggregationTest
         assertEquals(original.getMaxTimestamp(), typedCopy.getMaxTimestamp());
         assertEquals(original.getStep(), typedCopy.getStep());
         assertEquals(original.getStages(), typedCopy.getStages());
+    }
+
+    /**
+     * Test that constructor validates maxTimestamp > minTimestamp.
+     */
+    public void testConstructorValidatesTimestampRange() {
+        // Test maxTimestamp == minTimestamp (should fail)
+        IllegalArgumentException exception1 = expectThrows(
+            IllegalArgumentException.class,
+            () -> new TimeSeriesUnfoldAggregationBuilder("test", null, 1000L, 1000L, 100L)
+        );
+        assertTrue(
+            "Exception should mention timestamp validation",
+            exception1.getMessage().contains("maxTimestamp must be greater than minTimestamp")
+        );
+
+        // Test maxTimestamp < minTimestamp (should fail)
+        IllegalArgumentException exception2 = expectThrows(
+            IllegalArgumentException.class,
+            () -> new TimeSeriesUnfoldAggregationBuilder("test", null, 2000L, 1000L, 100L)
+        );
+        assertTrue(
+            "Exception should mention timestamp validation",
+            exception2.getMessage().contains("maxTimestamp must be greater than minTimestamp")
+        );
+
+        // Test maxTimestamp > minTimestamp (should succeed)
+        TimeSeriesUnfoldAggregationBuilder builder = new TimeSeriesUnfoldAggregationBuilder("test", null, 1000L, 1001L, 100L);
+        assertNotNull("Builder should be created successfully when maxTimestamp > minTimestamp", builder);
+        assertEquals(1000L, builder.getMinTimestamp());
+        assertEquals(1001L, builder.getMaxTimestamp());
     }
 
     /**

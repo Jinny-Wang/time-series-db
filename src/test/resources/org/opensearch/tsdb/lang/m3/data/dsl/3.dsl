@@ -21,7 +21,7 @@
                     "from" : null,
                     "to" : 1001000000,
                     "include_lower" : true,
-                    "include_upper" : true,
+                    "include_upper" : false,
                     "boost" : 1.0
                   }
                 }
@@ -59,7 +59,7 @@
                     "from" : null,
                     "to" : 1001000000,
                     "include_lower" : true,
-                    "include_upper" : true,
+                    "include_upper" : false,
                     "boost" : 1.0
                   }
                 }
@@ -97,7 +97,7 @@
                     "from" : null,
                     "to" : 914600000,
                     "include_lower" : true,
-                    "include_upper" : true,
+                    "include_upper" : false,
                     "boost" : 1.0
                   }
                 }
@@ -135,7 +135,7 @@
                     "from" : null,
                     "to" : 828200000,
                     "include_lower" : true,
-                    "include_upper" : true,
+                    "include_upper" : false,
                     "boost" : 1.0
                   }
                 }
@@ -181,7 +181,7 @@
                   "from" : null,
                   "to" : 1001000000,
                   "include_lower" : true,
-                  "include_upper" : true,
+                  "include_upper" : false,
                   "boost" : 1.0
                 }
               }
@@ -238,7 +238,7 @@
                   "from" : null,
                   "to" : 1001000000,
                   "include_lower" : true,
-                  "include_upper" : true,
+                  "include_upper" : false,
                   "boost" : 1.0
                 }
               }
@@ -295,7 +295,7 @@
                   "from" : null,
                   "to" : 914600000,
                   "include_lower" : true,
-                  "include_upper" : true,
+                  "include_upper" : false,
                   "boost" : 1.0
                 }
               }
@@ -352,7 +352,7 @@
                   "from" : null,
                   "to" : 828200000,
                   "include_lower" : true,
-                  "include_upper" : true,
+                  "include_upper" : false,
                   "boost" : 1.0
                 }
               }

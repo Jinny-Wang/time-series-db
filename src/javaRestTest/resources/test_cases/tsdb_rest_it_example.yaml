@@ -46,7 +46,7 @@ test_case:
       indices: "http_metrics_rest_test"
       time_config:
         min_timestamp: "now-60m"
-        max_timestamp: "now-10m"
+        max_timestamp: "now"
         step: "10m"
       expected:
         status: "success"
@@ -66,7 +66,7 @@ test_case:
       indices: "http_metrics_rest_test"
       time_config:
         min_timestamp: "now-50m"
-        max_timestamp: "now-10m"
+        max_timestamp: "now"
         step: "10m"
       expected:
         status: "success"

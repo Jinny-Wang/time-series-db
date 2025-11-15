@@ -646,8 +646,9 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         }
 
         // Add time filtering
-        boolQuery.filter(QueryBuilders.rangeQuery(Constants.IndexSchema.MIN_TIMESTAMP).lte(range.end));
-        boolQuery.filter(QueryBuilders.rangeQuery(Constants.IndexSchema.MAX_TIMESTAMP).gte(range.start));
+        // M3QL uses [start, end) semantics: start is inclusive, end is exclusive
+        boolQuery.filter(QueryBuilders.rangeQuery(Constants.IndexSchema.MIN_TIMESTAMP).lt(range.end)); // Exclusive end
+        boolQuery.filter(QueryBuilders.rangeQuery(Constants.IndexSchema.MAX_TIMESTAMP).gte(range.start)); // Inclusive start
 
         return boolQuery;
     }

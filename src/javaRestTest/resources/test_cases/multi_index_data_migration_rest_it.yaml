@@ -18,7 +18,7 @@ test_case:
       input_data_type: FIXED_INTERVAL
       time_config:
         min_timestamp: "2025-01-01T00:00:00Z"
-        max_timestamp: "2025-01-01T01:00:00Z"
+        max_timestamp: "2025-01-01T01:05:00Z"
         step: "5m"
       regular_metrics:
         - labels: "name:requests,service:service1"
@@ -43,7 +43,7 @@ test_case:
       indices: "metrics_index1"
       time_config:
         min_timestamp: "2025-01-01T00:00:00Z"
-        max_timestamp: "2025-01-01T01:00:00Z"
+        max_timestamp: "2025-01-01T01:05:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -67,7 +67,7 @@ test_case:
               partition_keys: "service:service2"
       time_config:
         min_timestamp: "2025-01-01T00:00:00Z"
-        max_timestamp: "2025-01-01T01:00:00Z"
+        max_timestamp: "2025-01-01T01:05:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -92,7 +92,7 @@ test_case:
               partition_keys: "service:service2"
       time_config:
         min_timestamp: "2025-01-01T00:00:00Z"
-        max_timestamp: "2025-01-01T01:00:00Z"
+        max_timestamp: "2025-01-01T01:05:00Z"
         step: "5m"
       expected:
         status: "success"

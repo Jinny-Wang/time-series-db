@@ -111,10 +111,11 @@ public class XORIteratorTests extends OpenSearchTestCase {
 
         XORIterator iterator = new XORIterator(chunk.bytes());
 
-        // Test decoding with exact boundaries (inclusive)
+        // Test decoding with exact boundaries [1000, 3000) - inclusive start, exclusive end
         List<Sample> samples = iterator.decodeSamples(1000L, 3000L);
 
-        assertEquals(samples, List.of(new FloatSample(1000L, 10.0), new FloatSample(2000L, 20.0), new FloatSample(3000L, 30.0)));
+        // Sample at 3000L is NOT included because maxTimestamp is exclusive
+        assertEquals(samples, List.of(new FloatSample(1000L, 10.0), new FloatSample(2000L, 20.0)));
     }
 
     public void testXORIteratorDecodeSamplesEmptyChunk() {

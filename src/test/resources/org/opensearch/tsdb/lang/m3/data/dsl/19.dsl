@@ -18,7 +18,7 @@
               "from" : null,
               "to" : 1001000000,
               "include_lower" : true,
-              "include_upper" : true,
+              "include_upper" : false,
               "boost" : 1.0
             }
           }

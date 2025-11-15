@@ -19,7 +19,7 @@ test_case:
       input_data_type: FIXED_INTERVAL
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       regular_metrics:
       # Series A: Linear increasing pattern - GET requests
@@ -50,7 +50,7 @@ test_case:
       query: "fetch name:http_requests_total_A"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -63,7 +63,7 @@ test_case:
       query: "seriesA_ref = fetch name:http_requests_total_A; seriesA_ref"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -76,7 +76,7 @@ test_case:
       query: "fetch method:POST"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -93,7 +93,7 @@ test_case:
       query: seriesA_ref = fetch name:http_requests_total_A; fetch name:http_requests_total_B | seriesA_ref
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -108,7 +108,7 @@ test_case:
       query: "fetch method:POST | min"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -121,7 +121,7 @@ test_case:
       query: "fetch status:200 | sum method"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -136,7 +136,7 @@ test_case:
       query: "fetch method:POST | avg"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -149,7 +149,7 @@ test_case:
       query: seriesA_ref = fetch name:http_requests_total_A; fetch name:http_requests_total_B | seriesA_ref | sum
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -162,7 +162,7 @@ test_case:
       query: "fetch method:GET | sum method | scale 2"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -175,7 +175,7 @@ test_case:
       query: "fetch method:POST | min | removeEmpty"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -188,7 +188,7 @@ test_case:
       query: "fetch method:POST | sort max desc"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -205,7 +205,7 @@ test_case:
       query: "fetch method:GET | max | timeshift 10m"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -218,7 +218,7 @@ test_case:
       query: "fetch method:POST | sum | perSecond"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -231,7 +231,7 @@ test_case:
       query: "fetch method:POST | transformNull 0 | sum method"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -257,7 +257,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift 5m | perSecond"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -270,7 +270,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift 13m | perSecond"
       time_config:
         min_timestamp: "2025-01-01T02:08:00Z"
-        max_timestamp: "2025-01-01T03:03:00Z"
+        max_timestamp: "2025-01-01T03:08:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -283,7 +283,7 @@ test_case:
       query: "fetch name:http_requests_total_A | notAFunction"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "failure"
@@ -294,7 +294,7 @@ test_case:
       query: "fetch name:http_requests_total_A | sort notSortOption desc"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "failure"
@@ -305,7 +305,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "failure"
@@ -316,7 +316,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift 10m 10m"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "failure"
@@ -327,7 +327,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift m5"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "failure"
@@ -338,7 +338,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift 5m"
       time_config:
         min_timestamp: "2025-01-01T02:05:00Z"
-        max_timestamp: "2025-01-01T03:00:00Z"
+        max_timestamp: "2025-01-01T03:05:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -351,7 +351,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift -5m"
       time_config:
         min_timestamp: "2025-01-01T01:55:00Z"
-        max_timestamp: "2025-01-01T03:00:00Z"
+        max_timestamp: "2025-01-01T03:05:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -364,7 +364,7 @@ test_case:
       query: "fetch name:http_requests_total_A | timeshift -5m"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T03:00:00Z"
+        max_timestamp: "2025-01-01T03:05:00Z"
         step: "5m"
       expected:
         status: "success"
@@ -377,7 +377,7 @@ test_case:
       query: "fetch name:nonexistent_metric | sum"
       time_config:
         min_timestamp: "2025-01-01T02:00:00Z"
-        max_timestamp: "2025-01-01T02:55:00Z"
+        max_timestamp: "2025-01-01T03:00:00Z"
         step: "5m"
       expected:
         status: "success"

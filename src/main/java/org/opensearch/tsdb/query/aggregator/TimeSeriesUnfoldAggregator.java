@@ -101,6 +101,7 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
     private final long minTimestamp;
     private final long maxTimestamp;
     private final long step;
+    private final long theoreticalMaxTimestamp; // Theoretical maximum aligned timestamp for time series
 
     // Aggregator profiler debug info
     private final DebugInfo debugInfo = new DebugInfo();
@@ -138,6 +139,11 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
         this.minTimestamp = minTimestamp;
         this.maxTimestamp = maxTimestamp;
         this.step = step;
+
+        // Calculate theoretical maximum aligned timestamp
+        // This is the largest timestamp aligned to (minTimestamp + N * step) that is < maxTimestamp
+        // Formula: (maxTimestamp - 1 - minTimestamp) / step * step + minTimestamp
+        this.theoreticalMaxTimestamp = (maxTimestamp - 1 - minTimestamp) / step * step + minTimestamp;
     }
 
     @Override
@@ -282,14 +288,23 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
                 );
 
                 // Replace the existing series with updated one (reuse existing hash and labels)
+                // Use theoreticalMaxTimestamp (calculated from query params) instead of query maxTimestamp
                 bucketSeries.set(
                     existingIndex,
-                    new TimeSeries(mergedSamples, existingSeries.getLabels(), minTimestamp, maxTimestamp, step, existingSeries.getAlias())
+                    new TimeSeries(
+                        mergedSamples,
+                        existingSeries.getLabels(),
+                        minTimestamp,
+                        theoreticalMaxTimestamp,
+                        step,
+                        existingSeries.getAlias()
+                    )
                 );
             } else {
                 // Create new time series with rounded samples and labels
                 // No need to sort - samples within each chunk are already sorted by timestamp
-                TimeSeries newSeries = new TimeSeries(roundedSamples, labels, minTimestamp, maxTimestamp, step, null);
+                // Use theoreticalMaxTimestamp (calculated from query params) instead of query maxTimestamp
+                TimeSeries newSeries = new TimeSeries(roundedSamples, labels, minTimestamp, theoreticalMaxTimestamp, step, null);
 
                 bucketSeries.add(newSeries);
             }

@@ -245,8 +245,8 @@ public class TSAggregationPluginTests extends TimeSeriesAggregatorTestCase {
         TimeSeriesUnfoldAggregationBuilder unfoldAgg = new TimeSeriesUnfoldAggregationBuilder(
             "unfold_filtered",
             List.of(new ScaleStage(1.0)), // No scaling to test pure filtering
-            1100L, // Only include samples from 1100 onwards
-            1200L, // Only include samples up to 1200
+            1100L, // Only include samples from 1100 onwards (inclusive)
+            1300L, // Only include samples up to 1300 (exclusive)
             100L
         );
 
@@ -259,14 +259,14 @@ public class TSAggregationPluginTests extends TimeSeriesAggregatorTestCase {
                 1000L,
                 10.0,  // Should be filtered out (before minTimestamp)
                 1100L,
-                20.0,  // Should be included
+                20.0,  // Should be included (at minTimestamp, inclusive)
                 1150L,
                 20.0,  // Should be included and aligned to 1100
                 1200L,
-                30.0,  // Should be included
+                30.0,  // Should be included (< maxTimestamp)
                 1300L,
                 40.0
-            ); // Should be filtered out (after maxTimestamp)
+            ); // Should be filtered out (at maxTimestamp, exclusive)
         }, (InternalTimeSeries result) -> {
             assertNotNull("Unfold aggregation result should not be null", result);
             List<TimeSeries> timeSeries = result.getTimeSeries();
@@ -276,12 +276,12 @@ public class TSAggregationPluginTests extends TimeSeriesAggregatorTestCase {
             TimeSeries series = timeSeries.get(0);
             List<Sample> samples = series.getSamples();
 
-            // After deduplication, should have exactly 2 samples:
+            // After deduplication with [1100, 1300) range (inclusive start, exclusive end):
             // - 1000 is filtered out (before minTimestamp)
             // - 1100 is kept (value 20.0)
-            // - 1150 rounds to 1100 and overwrites the previous 1100 sample (value 25.0)
+            // - 1150 rounds to 1100 and overwrites the previous 1100 sample (value 20.0)
             // - 1200 is kept (value 30.0)
-            // - 1300 is filtered out (after maxTimestamp)
+            // - 1300 is filtered out (at maxTimestamp, which is now exclusive)
             List<Sample> expectedSamples = List.of(
                 new FloatSample(1100L, 20.0f),  // 1150 rounded and overwrote 1100
                 new FloatSample(1200L, 30.0f)
@@ -792,7 +792,7 @@ public class TSAggregationPluginTests extends TimeSeriesAggregatorTestCase {
                         "unfold_nested",
                         List.of(new ScaleStage(2.0)), // Scale by 2
                         1000L,
-                        3000L,
+                        4000L,
                         1000L
                     )
                 )
@@ -1372,7 +1372,7 @@ public class TSAggregationPluginTests extends TimeSeriesAggregatorTestCase {
             "unfold__percentile",
             List.of(new PercentileOfSeriesStage(List.of(0.0f, 30.0f, 50.0f, 90.0f, 95.0f, 99.0f, 100.0f), false)),
             1000L,
-            3000L,
+            4000L,
             1000L
         );
 

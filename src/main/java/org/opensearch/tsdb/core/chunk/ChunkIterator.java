@@ -66,8 +66,12 @@ public interface ChunkIterator {
      * the specified time range. It's optimized for streaming large chunks and provides
      * better memory efficiency compared to loading all data into memory.</p>
      *
+     * <p><strong>Time Range Semantics:</strong> Uses [minTimestamp, maxTimestamp) semantics,
+     * meaning minTimestamp is inclusive and maxTimestamp is exclusive. This matches standard
+     * time series conventions where queries specify ranges like [start, end).</p>
+     *
      * @param minTimestamp Minimum timestamp (inclusive) for samples to include
-     * @param maxTimestamp Maximum timestamp (inclusive) for samples to include
+     * @param maxTimestamp Maximum timestamp (exclusive) for samples to include
      * @return List of samples within the time range, never null but may be empty
      * @throws IllegalStateException if chunk data corruption is detected
      * @throws IllegalArgumentException if chunk format is invalid
@@ -85,7 +89,8 @@ public interface ChunkIterator {
         while (next() != ValueType.NONE) {
             TimestampValue tv = at();
             long timestamp = tv.timestamp();
-            if (timestamp >= minTimestamp && timestamp <= maxTimestamp) {
+            // [minTimestamp, maxTimestamp) - inclusive start, exclusive end
+            if (timestamp >= minTimestamp && timestamp < maxTimestamp) {
                 double value = tv.value();
                 samples.add(new FloatSample(timestamp, value));
             }

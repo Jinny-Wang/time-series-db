@@ -74,6 +74,7 @@ public class TimeSeriesUnfoldAggregationBuilder extends AbstractAggregationBuild
      * @param minTimestamp The minimum timestamp for filtering
      * @param maxTimestamp The maximum timestamp for filtering
      * @param step The step size for timestamp alignment
+     * @throws IllegalArgumentException if maxTimestamp is not greater than minTimestamp
      */
     public TimeSeriesUnfoldAggregationBuilder(
         String name,
@@ -83,6 +84,14 @@ public class TimeSeriesUnfoldAggregationBuilder extends AbstractAggregationBuild
         long step
     ) {
         super(name);
+
+        // Validate time range
+        if (maxTimestamp <= minTimestamp) {
+            throw new IllegalArgumentException(
+                "maxTimestamp must be greater than minTimestamp (minTimestamp=" + minTimestamp + ", maxTimestamp=" + maxTimestamp + ")"
+            );
+        }
+
         this.stages = (stages == null || stages.isEmpty()) ? null : stages;
         this.minTimestamp = minTimestamp;
         this.maxTimestamp = maxTimestamp;

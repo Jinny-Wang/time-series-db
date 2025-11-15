@@ -19,7 +19,7 @@ test_case:
       input_data_type: FIXED_INTERVAL
       time_config:
         min_timestamp: "2025-01-01T01:00:00Z"
-        max_timestamp: "2025-01-01T02:30:00Z"
+        max_timestamp: "2025-01-01T02:40:00Z"
         step: "10m"
       regular_metrics:
       # Series A: Linear incrementing pattern
@@ -45,7 +45,7 @@ test_case:
       query: "fetch method:POST | eq 12 | removeEmpty | transformNull 2 | sort max desc"
       time_config:
          min_timestamp: "2025-01-01T01:00:00Z"
-         max_timestamp: "2025-01-01T02:30:00Z"
+         max_timestamp: "2025-01-01T02:40:00Z"
          step: "10m"
       expected:
          status: "success"
@@ -58,7 +58,7 @@ test_case:
       query: "baseline_ref=fetch name:http_requests_seriesB; fetch name:http_requests_seriesA | asPercent(baseline_ref)"
       time_config:
          min_timestamp: "2025-01-01T01:00:00Z"
-         max_timestamp: "2025-01-01T02:30:00Z"
+         max_timestamp: "2025-01-01T02:40:00Z"
          step: "10m"
       expected:
          status: "success"
@@ -75,7 +75,7 @@ test_case:
         | timeshift 10m | sort avg desc
       time_config:
         min_timestamp: "2025-01-01T01:00:00Z"
-        max_timestamp: "2025-01-01T02:30:00Z"
+        max_timestamp: "2025-01-01T02:40:00Z"
         step: "10m"
       expected:
         status: "success"
@@ -90,7 +90,7 @@ test_case:
       query: "fetch status:200 | transformNull -20 | sumSeries method | max | scale 10"
       time_config:
           min_timestamp: "2025-01-01T01:00:00Z"
-          max_timestamp: "2025-01-01T02:30:00Z"
+          max_timestamp: "2025-01-01T02:40:00Z"
           step: "10m"
       expected:
           status: "success"
@@ -103,7 +103,7 @@ test_case:
       query: "fetch method:GET | transformNull 26.1237 | perSecond | max | timeshift 35m"
       time_config:
           min_timestamp: "2025-01-01T01:35:00Z"
-          max_timestamp: "2025-01-01T03:05:00Z"
+          max_timestamp: "2025-01-01T03:15:00Z"
           step: "10m"
       expected:
           status: "success"
@@ -116,7 +116,7 @@ test_case:
       query: "seriesA_ref=fetch name:http_requests_seriesA; fetch name:http_requests_seriesD | seriesA_ref"
       time_config:
           min_timestamp: "2025-01-01T01:00:00Z"
-          max_timestamp: "2025-01-01T02:30:00Z"
+          max_timestamp: "2025-01-01T02:40:00Z"
           step: "10m"
       expected:
           status: "success"
@@ -131,7 +131,7 @@ test_case:
       query: "fetch status:200 | transformNull 0 | sumSeries method status | avg | max | scale 0.25"
       time_config:
           min_timestamp: "2025-01-01T01:00:00Z"
-          max_timestamp: "2025-01-01T02:30:00Z"
+          max_timestamp: "2025-01-01T02:40:00Z"
           step: "10m"
       expected:
           status: "success"

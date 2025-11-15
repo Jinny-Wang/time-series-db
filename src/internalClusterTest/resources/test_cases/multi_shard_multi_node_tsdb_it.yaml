@@ -78,7 +78,7 @@ test_case:
       query: "fetch __name__:api_requests_total | sumSeries service"
       time_config:
         min_timestamp: "now-50m"
-        max_timestamp: "now-10m"
+        max_timestamp: "now"
         step: "10m"
       expected:
         status: "success"
@@ -97,7 +97,7 @@ test_case:
       query: "fetch __name__:db_queries_total | sumSeries"
       time_config:
         min_timestamp: "now-50m"
-        max_timestamp: "now-10m"
+        max_timestamp: "now"
         step: "10m"
       expected:
         status: "success"
@@ -112,7 +112,7 @@ test_case:
       query: "fetch __name__:api_requests_total | sumSeries status"
       time_config:
         min_timestamp: "now-50m"
-        max_timestamp: "now-10m"
+        max_timestamp: "now"
         step: "10m"
       expected:
         status: "success"
@@ -131,7 +131,7 @@ test_case:
       query: "fetch __name__:api_requests_total service:service_b endpoint:/products | transformNull 6"
       time_config:
         min_timestamp: "now-80m"
-        max_timestamp: "now-10m"
+        max_timestamp: "now"
         step: "10m"
       expected:
         status: "success"
