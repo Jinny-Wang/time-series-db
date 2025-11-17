@@ -182,8 +182,12 @@ public class SizeTieredCompaction implements Compaction {
             // It is ok to overwrite here since we copy indexes in chronological order.
             src.applyLiveSeriesMetaData(liveSeriesMetadata::put);
         }
-        dest.commitWithMetadata(liveSeriesMetadata);
+
+        // Force merge and commit to delete unused file
         dest.forceMerge();
+        dest.commitWithMetadata(liveSeriesMetadata);
+        dest.getDirectoryReaderManager().maybeRefreshBlocking();
+        dest.deleteUnusedFiles();
     }
 
     @Override

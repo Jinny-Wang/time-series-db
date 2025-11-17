@@ -7,6 +7,7 @@
  */
 package org.opensearch.tsdb.core.compaction;
 
+import org.opensearch.common.UUIDs;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.index.shard.ShardId;
@@ -325,18 +326,23 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         var indexes = createIndexes(manager, series1, new long[] { 0, 1, 2 }, new long[] { 1, 2, 3 });
         manager.commitChangedIndexes(List.of(series1));
 
+        var compactedMinTime = Time.toTimestamp(indexes.getFirst().getMinTime(), Constants.Time.DEFAULT_TIME_UNIT);
+        var compactedMaxTime = Time.toTimestamp(indexes.getLast().getMaxTime(), Constants.Time.DEFAULT_TIME_UNIT);
+        String dirName = String.join("_", "block", Long.toString(compactedMinTime), Long.toString(compactedMaxTime), UUIDs.base64UUID());
         var dest = new ClosedChunkIndex(
-            tempDir.resolve("blocks"),
-            new ClosedChunkIndex.Metadata(
-                "compacted",
-                Time.toTimestamp(indexes.getFirst().getMinTime(), Constants.Time.DEFAULT_TIME_UNIT),
-                Time.toTimestamp(indexes.getLast().getMaxTime(), Constants.Time.DEFAULT_TIME_UNIT)
-            ),
+            tempDir.resolve("blocks").resolve(dirName),
+            new ClosedChunkIndex.Metadata("compacted", compactedMinTime, compactedMaxTime),
             Constants.Time.DEFAULT_TIME_UNIT
         );
 
+        var sourceSize = 0L;
+        for (ClosedChunkIndex index : indexes) {
+            sourceSize += index.getIndexSize();
+        }
+
         // Execute compact
         compaction.compact(indexes, dest);
+        assertTrue(dest.getIndexSize() < sourceSize);
         var compactedSeriesMetadata = new HashMap<Long, Long>();
         dest.applyLiveSeriesMetaData(compactedSeriesMetadata::put);
         assertEquals(1, compactedSeriesMetadata.size());
