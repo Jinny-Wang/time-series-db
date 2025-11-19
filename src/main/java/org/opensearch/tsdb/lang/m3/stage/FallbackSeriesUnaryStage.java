@@ -47,8 +47,8 @@ public class FallbackSeriesUnaryStage implements UnaryPipelineStage {
      * Constructor for FallbackSeriesUnaryStage.
      *
      * @param fallbackValue the constant value to use as fallback
-     * @param minTimestamp the minimum timestamp for the constant series
-     * @param maxTimestamp the maximum timestamp for the constant series
+     * @param minTimestamp the minimum timestamp for the constant series (inclusive)
+     * @param maxTimestamp the maximum timestamp for the constant series (exclusive)
      * @param step the step size for the constant series
      */
     public FallbackSeriesUnaryStage(double fallbackValue, long minTimestamp, long maxTimestamp, long step) {
@@ -91,16 +91,17 @@ public class FallbackSeriesUnaryStage implements UnaryPipelineStage {
 
     /**
      * Create a constant series with the fallback value.
+     * Samples are generated at regular intervals from minTimestamp (inclusive) to maxTimestamp (exclusive).
      *
      * @return a list containing a single constant time series
      */
     private List<TimeSeries> createConstantSeries() {
-        // Calculate the number of samples to preallocate the list
-        int sampleCount = (int) ((maxTimestamp - minTimestamp) / step) + 1;
-        List<Sample> samples = new ArrayList<>(sampleCount);
+        // Calculate the number of samples: timestamps in [minTimestamp, maxTimestamp) at step intervals
+        long sampleCount = (maxTimestamp - minTimestamp - 1) / step + 1;
+        List<Sample> samples = new ArrayList<>((int) sampleCount);
 
-        // Generate samples from minTimestamp to maxTimestamp with the given step
-        for (long timestamp = minTimestamp; timestamp <= maxTimestamp; timestamp += step) {
+        // Generate samples from minTimestamp (inclusive) to maxTimestamp (exclusive) with the given step
+        for (long timestamp = minTimestamp; timestamp < maxTimestamp; timestamp += step) {
             samples.add(new FloatSample(timestamp, fallbackValue));
         }
 

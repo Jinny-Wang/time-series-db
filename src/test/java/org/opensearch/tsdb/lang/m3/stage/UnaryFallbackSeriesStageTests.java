@@ -48,6 +48,7 @@ public class UnaryFallbackSeriesStageTests extends AbstractWireSerializingTestCa
 
     /**
      * Test that when input is empty, a constant series is returned.
+     * Note: maxTimestamp is exclusive, so samples are generated in [minTimestamp, maxTimestamp).
      */
     public void testEmptyInputReturnsConstantSeries() {
         double fallbackValue = 2.5;
@@ -67,12 +68,11 @@ public class UnaryFallbackSeriesStageTests extends AbstractWireSerializingTestCa
         assertEquals(maxTimestamp, constantSeries.getMaxTimestamp());
         assertEquals(step, constantSeries.getStep());
 
-        // Verify samples are generated correctly
+        // Verify samples are generated correctly (maxTimestamp is exclusive, so no sample at 30)
         List<Sample> expectedSamples = List.of(
             new FloatSample(0L, fallbackValue),
             new FloatSample(10L, fallbackValue),
-            new FloatSample(20L, fallbackValue),
-            new FloatSample(30L, fallbackValue)
+            new FloatSample(20L, fallbackValue)
         );
         assertSamplesEqual("Constant series samples should match", expectedSamples, constantSeries.getSamples());
     }
@@ -87,17 +87,18 @@ public class UnaryFallbackSeriesStageTests extends AbstractWireSerializingTestCa
 
     /**
      * Test constant series generation with different step sizes.
+     * Note: maxTimestamp is exclusive, so samples are generated in [minTimestamp, maxTimestamp).
      */
     public void testConstantSeriesWithDifferentSteps() {
-        // Test with step = 5
+        // Test with step = 5, max=10 (exclusive) -> samples at 0, 5
         FallbackSeriesUnaryStage stage1 = new FallbackSeriesUnaryStage(1.0, 0L, 10L, 5L);
         List<TimeSeries> result1 = stage1.process(List.of());
-        assertEquals(3, result1.get(0).getSamples().size()); // 0, 5, 10
+        assertEquals(2, result1.get(0).getSamples().size()); // 0, 5 (10 is excluded)
 
-        // Test with step = 3
+        // Test with step = 3, max=9 (exclusive) -> samples at 0, 3, 6
         FallbackSeriesUnaryStage stage2 = new FallbackSeriesUnaryStage(1.0, 0L, 9L, 3L);
         List<TimeSeries> result2 = stage2.process(List.of());
-        assertEquals(4, result2.get(0).getSamples().size()); // 0, 3, 6, 9
+        assertEquals(3, result2.get(0).getSamples().size()); // 0, 3, 6 (9 is excluded)
     }
 
     /**
