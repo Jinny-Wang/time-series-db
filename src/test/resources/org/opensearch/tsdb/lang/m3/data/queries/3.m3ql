@@ -1,6 +1,7 @@
 # TODO repeated filter aggregations should be de-duplicated in the generated dsl
 # test timeshift, with re-used sub-query
-a = (fetch region:west
+# test 'exec   (' where exec is separated from the left paren by whitespace
+a = exec   (fetch region:west
   | sum city_name
   | transformNull
   | moving 1h sum);

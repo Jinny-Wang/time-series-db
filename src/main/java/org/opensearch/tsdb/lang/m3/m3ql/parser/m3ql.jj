@@ -72,13 +72,26 @@ TOKEN : {
     < SEMICOLON: ";" >
   | < EQUALS: "=" >
   | < PIPE: "|" >
-  | < LPAREN: "(" | "exec(" > // exec(...) is equivalent to (...) in M3QL
+  | < LPAREN: "(" >
   | < RPAREN: ")" >
   | < COLON: ":" >
   | < OPEN_CURLY: "{" >
   | < CLOSED_CURLY: "}" >
   | < COMMA: "," >
   | < EXCLAMATION_MARK: "!" >
+}
+
+// Helper function to consume optional "exec" before "("
+// 'exec(...)' and 'exec    (...)' is treated as equivalent to (...) in M3QL
+void LeftParen() :
+{}
+{
+    (
+        LOOKAHEAD({ getToken(1).kind == IDENTIFIER && "exec".equals(getToken(1).image) && getToken(2).kind == LPAREN })
+        <IDENTIFIER>   // swallow "exec"
+        <LPAREN>
+      | <LPAREN>
+    )
 }
 
 RootNode Root() :
@@ -157,7 +170,7 @@ M3ASTNode Expression() :
 }
 {
     (
-        LOOKAHEAD(<LPAREN>)
+        LOOKAHEAD(LeftParen())
         childNode = ParenthesizedExpression()
       | childNode = Function()
     )
@@ -170,7 +183,7 @@ M3ASTNode ParenthesizedExpression() :
     M3ASTNode tempChildNode;
 }
 {
-    <LPAREN>
+    LeftParen()
     tempChildNode = Expression()
     { groupNode.addChildNode(tempChildNode); }
 
