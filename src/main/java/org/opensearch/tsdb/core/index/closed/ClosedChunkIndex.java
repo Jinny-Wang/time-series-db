@@ -16,12 +16,14 @@ import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedSetDocValuesField;
 import org.apache.lucene.document.StringField;
+import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexDeletionPolicy;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
+import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.ReaderManager;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.search.Sort;
@@ -77,17 +79,30 @@ public class ClosedChunkIndex {
      * @throws IOException if there is an error creating the index
      */
     public ClosedChunkIndex(Path dir, Metadata metadata, TimeUnit resolution) throws IOException {
+        this(dir, metadata, resolution, new ConcurrentMergeScheduler());
+    }
+
+    /**
+     * Create a new ClosedChunkIndex in the given directory.
+     *
+     * @param dir        the directory to store the index
+     * @param metadata   metadata of the index
+     * @param resolution resolution of the samples
+     * @param scheduler  merge scheduler to use.
+     * @throws IOException if there is an error creating the index
+     */
+    public ClosedChunkIndex(Path dir, Metadata metadata, TimeUnit resolution, MergeScheduler scheduler) throws IOException {
         if (!Files.exists(dir)) {
             Files.createDirectories(dir);
         }
 
-        analyzer = new WhitespaceAnalyzer();
         directory = new MMapDirectory(dir);
+        analyzer = new WhitespaceAnalyzer();
         try {
             this.metadata = metadata;
             this.resolution = resolution;
             IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
-
+            iwc.setMergeScheduler(scheduler);
             // Use SnapshotDeletionPolicy to allow taking snapshots during recovery
             IndexDeletionPolicy baseDeletionPolicy = new KeepOnlyLastCommitDeletionPolicy();
             this.snapshotDeletionPolicy = new SnapshotDeletionPolicy(baseDeletionPolicy);
@@ -99,6 +114,7 @@ public class ClosedChunkIndex {
             iwc.setIndexSort(indexSort);
 
             indexWriter = new IndexWriter(directory, iwc);
+
             directoryReaderManager = new ReaderManager(DirectoryReader.open(indexWriter));
             path = dir;
         } catch (IOException e) {
@@ -174,6 +190,7 @@ public class ClosedChunkIndex {
 
     /**
      * Deletes the unused files.
+     *
      * @throws IOException if anything goes wrong while deleting the files.
      */
     public void deleteUnusedFiles() throws IOException {

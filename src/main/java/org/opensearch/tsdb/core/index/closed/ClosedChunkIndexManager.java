@@ -10,6 +10,7 @@ package org.opensearch.tsdb.core.index.closed;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.ReaderManager;
+import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.opensearch.common.UUIDs;
 import org.opensearch.common.logging.Loggers;
@@ -272,8 +273,13 @@ public class ClosedChunkIndexManager {
         var dirName = String.join("_", BLOCK_PREFIX, Long.toString(minTime), Long.toString(maxTime), UUIDs.base64UUID());
         var metadata = new ClosedChunkIndex.Metadata(dirName, minTime, maxTime);
 
-        ClosedChunkIndex newIndex = new ClosedChunkIndex(dir.resolve(dirName), metadata, resolution);
+        // Create an index with serial scheduler to make it less compute expensive.
+        ClosedChunkIndex newIndex = new ClosedChunkIndex(dir.resolve(dirName), metadata, resolution, new SerialMergeScheduler());
         compaction.compact(plan, newIndex);
+
+        // Close the index and re-create with the default scheduler.
+        newIndex.close();
+        newIndex = new ClosedChunkIndex(dir.resolve(dirName), metadata, resolution);
         log.info(
             "Compaction took: {} s, original size: {} bytes, compacted size: {} bytes",
             Duration.between(start, Instant.now()).toSeconds(),
