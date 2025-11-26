@@ -12,6 +12,7 @@ import org.apache.lucene.document.BinaryDocValuesField;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.LongRange;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.index.DirectoryReader;
@@ -751,8 +752,10 @@ public class TSDBDirectoryReaderTests extends OpenSearchTestCase {
             new TermQuery(new Term(Constants.IndexSchema.LABELS, "service=db,env=prod")),
             BooleanClause.Occur.FILTER
         )
-            .add(LongPoint.newRangeQuery(Constants.IndexSchema.MIN_TIMESTAMP, Long.MIN_VALUE, 2000000L), BooleanClause.Occur.FILTER)
-            .add(LongPoint.newRangeQuery(Constants.IndexSchema.MAX_TIMESTAMP, 2999999L, Long.MAX_VALUE), BooleanClause.Occur.FILTER)
+            .add(
+                LongRange.newIntersectsQuery(Constants.IndexSchema.TIMESTAMP_RANGE, new long[] { 2000000L }, new long[] { 2999999L }),
+                BooleanClause.Occur.FILTER
+            )
             .build();
 
         TopDocs combinedResults = searcher.search(combinedQuery, 10);
@@ -1314,9 +1317,8 @@ public class TSDBDirectoryReaderTests extends OpenSearchTestCase {
         doc.add(new StringField(Constants.IndexSchema.LABELS, labels, Field.Store.NO));
         doc.add(new LongPoint(Constants.IndexSchema.REFERENCE, reference));
         doc.add(new NumericDocValuesField(Constants.IndexSchema.REFERENCE, reference));
-        doc.add(new LongPoint(Constants.IndexSchema.MIN_TIMESTAMP, mint));
+        doc.add(new LongRange(Constants.IndexSchema.TIMESTAMP_RANGE, new long[] { mint }, new long[] { maxt }));
         doc.add(new NumericDocValuesField(Constants.IndexSchema.MIN_TIMESTAMP, mint));
-        doc.add(new LongPoint(Constants.IndexSchema.MAX_TIMESTAMP, maxt));
         doc.add(new NumericDocValuesField(Constants.IndexSchema.MAX_TIMESTAMP, maxt));
         return doc;
     }
@@ -1341,9 +1343,15 @@ public class TSDBDirectoryReaderTests extends OpenSearchTestCase {
         doc.add(
             new BinaryDocValuesField(Constants.IndexSchema.CHUNK, ClosedChunkIndexIO.serializeChunk(memChunk.getCompoundChunk().toChunk()))
         );
-        doc.add(new LongPoint(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
+        doc.add(
+            new LongRange(
+                Constants.IndexSchema.TIMESTAMP_RANGE,
+                new long[] { memChunk.getMinTimestamp() },
+                new long[] { memChunk.getMaxTimestamp() }
+            )
+        );
+
         doc.add(new NumericDocValuesField(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
-        doc.add(new LongPoint(Constants.IndexSchema.MAX_TIMESTAMP, memChunk.getMaxTimestamp()));
         doc.add(new NumericDocValuesField(Constants.IndexSchema.MAX_TIMESTAMP, memChunk.getMaxTimestamp()));
         return doc;
     }

@@ -16,22 +16,11 @@
               },
               {
                 "range" : {
-                  "min_timestamp" : {
-                    "from" : null,
+                  "timestamp_range" : {
+                    "from" : 996400000,
                     "to" : 1001000000,
                     "include_lower" : true,
                     "include_upper" : false,
-                    "boost" : 1.0
-                  }
-                }
-              },
-              {
-                "range" : {
-                  "max_timestamp" : {
-                    "from" : 996400000,
-                    "to" : null,
-                    "include_lower" : true,
-                    "include_upper" : true,
                     "boost" : 1.0
                   }
                 }
@@ -54,22 +43,11 @@
               },
               {
                 "range" : {
-                  "min_timestamp" : {
-                    "from" : null,
+                  "timestamp_range" : {
+                    "from" : 996400000,
                     "to" : 1001000000,
                     "include_lower" : true,
                     "include_upper" : false,
-                    "boost" : 1.0
-                  }
-                }
-              },
-              {
-                "range" : {
-                  "max_timestamp" : {
-                    "from" : 996400000,
-                    "to" : null,
-                    "include_lower" : true,
-                    "include_upper" : true,
                     "boost" : 1.0
                   }
                 }
@@ -92,25 +70,14 @@
               },
               {
                 "range" : {
-                  "min_timestamp" : {
-                    "from" : null,
+                  "timestamp_range" : {
+                    "from" : 910000000,
                     "to" : 914600000,
                     "include_lower" : true,
                     "include_upper" : false,
                     "boost" : 1.0
                   }
                 }
-              },
-              {
-                "range" : {
-                  "max_timestamp" : {
-                    "from" : 910000000,
-                    "to" : null,
-                    "include_lower" : true,
-                    "include_upper" : true,
-                    "boost" : 1.0
-                  }
-                }
               }
             ],
             "adjust_pure_negative" : true,
@@ -130,22 +97,11 @@
               },
               {
                 "range" : {
-                  "min_timestamp" : {
-                    "from" : null,
+                  "timestamp_range" : {
+                    "from" : 823600000,
                     "to" : 828200000,
                     "include_lower" : true,
                     "include_upper" : false,
-                    "boost" : 1.0
-                  }
-                }
-              },
-              {
-                "range" : {
-                  "max_timestamp" : {
-                    "from" : 823600000,
-                    "to" : null,
-                    "include_lower" : true,
-                    "include_upper" : true,
                     "boost" : 1.0
                   }
                 }
@@ -177,22 +133,11 @@
             },
             {
               "range" : {
-                "min_timestamp" : {
-                  "from" : null,
+                "timestamp_range" : {
+                  "from" : 996400000,
                   "to" : 1001000000,
                   "include_lower" : true,
                   "include_upper" : false,
-                  "boost" : 1.0
-                }
-              }
-            },
-            {
-              "range" : {
-                "max_timestamp" : {
-                  "from" : 996400000,
-                  "to" : null,
-                  "include_lower" : true,
-                  "include_upper" : true,
                   "boost" : 1.0
                 }
               }
@@ -234,22 +179,11 @@
             },
             {
               "range" : {
-                "min_timestamp" : {
-                  "from" : null,
+                "timestamp_range" : {
+                  "from" : 996400000,
                   "to" : 1001000000,
                   "include_lower" : true,
                   "include_upper" : false,
-                  "boost" : 1.0
-                }
-              }
-            },
-            {
-              "range" : {
-                "max_timestamp" : {
-                  "from" : 996400000,
-                  "to" : null,
-                  "include_lower" : true,
-                  "include_upper" : true,
                   "boost" : 1.0
                 }
               }
@@ -291,22 +225,11 @@
             },
             {
               "range" : {
-                "min_timestamp" : {
-                  "from" : null,
+                "timestamp_range" : {
+                  "from" : 910000000,
                   "to" : 914600000,
                   "include_lower" : true,
                   "include_upper" : false,
-                  "boost" : 1.0
-                }
-              }
-            },
-            {
-              "range" : {
-                "max_timestamp" : {
-                  "from" : 910000000,
-                  "to" : null,
-                  "include_lower" : true,
-                  "include_upper" : true,
                   "boost" : 1.0
                 }
               }
@@ -348,22 +271,11 @@
             },
             {
               "range" : {
-                "min_timestamp" : {
-                  "from" : null,
+                "timestamp_range" : {
+                  "from" : 823600000,
                   "to" : 828200000,
                   "include_lower" : true,
                   "include_upper" : false,
-                  "boost" : 1.0
-                }
-              }
-            },
-            {
-              "range" : {
-                "max_timestamp" : {
-                  "from" : 823600000,
-                  "to" : null,
-                  "include_lower" : true,
-                  "include_upper" : true,
                   "boost" : 1.0
                 }
               }

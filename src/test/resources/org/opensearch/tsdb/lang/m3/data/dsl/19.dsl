@@ -13,22 +13,11 @@
         },
         {
           "range" : {
-            "min_timestamp" : {
-              "from" : null,
+            "timestamp_range" : {
+              "from" : 1000000000,
               "to" : 1001000000,
               "include_lower" : true,
               "include_upper" : false,
-              "boost" : 1.0
-            }
-          }
-        },
-        {
-          "range" : {
-            "max_timestamp" : {
-              "from" : 1000000000,
-              "to" : null,
-              "include_lower" : true,
-              "include_upper" : true,
               "boost" : 1.0
             }
           }

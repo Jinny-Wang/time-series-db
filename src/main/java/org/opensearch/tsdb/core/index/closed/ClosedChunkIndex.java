@@ -12,7 +12,7 @@ import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
 import org.apache.lucene.document.BinaryDocValuesField;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.LongRange;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedSetDocValuesField;
 import org.apache.lucene.document.StringField;
@@ -42,6 +42,7 @@ import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.head.MemSeries;
 import org.opensearch.tsdb.core.mapping.Constants;
 import org.opensearch.tsdb.core.model.Labels;
+import org.opensearch.tsdb.core.utils.TimestampRangeEncoding;
 import org.opensearch.tsdb.core.utils.Time;
 
 import java.io.Closeable;
@@ -141,10 +142,19 @@ public class ClosedChunkIndex implements Closeable {
         doc.add(
             new BinaryDocValuesField(Constants.IndexSchema.CHUNK, ClosedChunkIndexIO.serializeChunk(memChunk.getCompoundChunk().toChunk()))
         );
-        doc.add(new LongPoint(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
-        doc.add(new NumericDocValuesField(Constants.IndexSchema.MIN_TIMESTAMP, memChunk.getMinTimestamp()));
-        doc.add(new LongPoint(Constants.IndexSchema.MAX_TIMESTAMP, memChunk.getMaxTimestamp()));
-        doc.add(new NumericDocValuesField(Constants.IndexSchema.MAX_TIMESTAMP, memChunk.getMaxTimestamp()));
+        long minTs = memChunk.getMinTimestamp();
+        long maxTs = memChunk.getMaxTimestamp();
+
+        // This enables chunks to be sorted by MIN_TIMESTAMP
+        doc.add(new NumericDocValuesField(Constants.IndexSchema.MIN_TIMESTAMP, minTs));
+
+        // Add LongRange for BKD tree index (fast for selective queries matching few documents)
+        doc.add(new LongRange(Constants.IndexSchema.TIMESTAMP_RANGE, new long[] { minTs }, new long[] { maxTs }));
+
+        // Add binary doc values field for doc values range queries (fast for dense queries matching many documents)
+        // Uses OpenSearch's RangeType.LONG encoding (VarInt format for compact storage)
+        doc.add(new BinaryDocValuesField(Constants.IndexSchema.TIMESTAMP_RANGE, TimestampRangeEncoding.encodeRange(minTs, maxTs)));
+
         indexWriter.addDocument(doc);
     }
 

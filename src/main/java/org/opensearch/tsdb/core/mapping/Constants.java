@@ -59,6 +59,12 @@ public final class Constants {
          * Maximum timestamp of all data points in the chunk
          */
         public static final String MAX_TIMESTAMP = "max_timestamp";
+
+        /**
+         * Timestamp range field storing [min_timestamp, max_timestamp] as a LongRange.
+         * Used for efficient range intersection queries.
+         */
+        public static final String TIMESTAMP_RANGE = "timestamp_range";
     }
 
     /**
@@ -99,18 +105,14 @@ public final class Constants {
                 "{value}": {
                   "type": "double"
                 },
-                "{min_timestamp}": {
-                  "type": "long"
-                },
-                "{max_timestamp}": {
-                  "type": "long"
+                "{timestamp_range}": {
+                  "type": "long_range"
                 }
               }
             }
             """.replace("{labels}", IndexSchema.LABELS)
             .replace("{timestamp}", SAMPLE_TIMESTAMP)
             .replace("{value}", SAMPLE_VALUE)
-            .replace("{min_timestamp}", IndexSchema.MIN_TIMESTAMP)
-            .replace("{max_timestamp}", IndexSchema.MAX_TIMESTAMP);
+            .replace("{timestamp_range}", IndexSchema.TIMESTAMP_RANGE);
     }
 }

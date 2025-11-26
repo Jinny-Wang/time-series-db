@@ -9,9 +9,11 @@ package org.opensearch.tsdb.core.index.live;
 
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
+import org.apache.lucene.document.BinaryDocValuesField;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.LongRange;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedSetDocValuesField;
 import org.apache.lucene.document.StringField;
@@ -37,6 +39,7 @@ import org.opensearch.index.engine.TSDBTragicException;
 import org.opensearch.tsdb.core.head.MemSeries;
 import org.opensearch.tsdb.core.mapping.Constants;
 import org.opensearch.tsdb.core.model.Labels;
+import org.opensearch.tsdb.core.utils.TimestampRangeEncoding;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -108,11 +111,23 @@ public class LiveSeriesIndex implements Closeable {
         }
         doc.add(new LongPoint(Constants.IndexSchema.REFERENCE, reference));
         doc.add(new NumericDocValuesField(Constants.IndexSchema.REFERENCE, reference));
-        doc.add(new LongPoint(Constants.IndexSchema.MIN_TIMESTAMP, minTimestamp));
+
+        // Add MIN_TIMESTAMP as NumericDocValuesField (for consistency with ClosedChunkIndex and test compatibility)
         doc.add(new NumericDocValuesField(Constants.IndexSchema.MIN_TIMESTAMP, minTimestamp));
-        doc.add(new LongPoint(Constants.IndexSchema.MAX_TIMESTAMP, Long.MAX_VALUE)); // live chunks assumed to max infinite max timestamp
-        doc.add(new NumericDocValuesField(Constants.IndexSchema.MAX_TIMESTAMP, Long.MAX_VALUE));
+
+        // Add LongRange for BKD tree index (fast for selective queries)
+        // Live chunks have open-ended max timestamp (Long.MAX_VALUE)
+        doc.add(new LongRange(Constants.IndexSchema.TIMESTAMP_RANGE, new long[] { minTimestamp }, new long[] { Long.MAX_VALUE }));
+
         try {
+            // Add binary doc values field for doc values range queries (fast for dense queries)
+            // Uses OpenSearch's RangeType.LONG encoding, 16 bytes at most for min+max (VarInt format for compact storage)
+            doc.add(
+                new BinaryDocValuesField(
+                    Constants.IndexSchema.TIMESTAMP_RANGE,
+                    TimestampRangeEncoding.encodeRange(minTimestamp, Long.MAX_VALUE)
+                )
+            );
             indexWriter.addDocument(doc);
         } catch (Exception e) {
             // Check for tragic exception - if IndexWriter encountered a fatal error, propagate it as tragic

@@ -8,7 +8,7 @@
 package org.opensearch.tsdb.core.index.live;
 
 import org.apache.lucene.analysis.core.WhitespaceAnalyzer;
-import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.LongRange;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.LeafReaderContext;
@@ -248,8 +248,14 @@ public class LiveSeriesIndexTests extends OpenSearchTestCase {
                 new QueryParser(Constants.IndexSchema.LABELS, new WhitespaceAnalyzer()).parse(queryString),
                 BooleanClause.Occur.MUST
             )
-                .add(LongPoint.newRangeQuery(Constants.IndexSchema.MIN_TIMESTAMP, Long.MIN_VALUE, maxTimestamp), BooleanClause.Occur.FILTER)
-                .add(LongPoint.newRangeQuery(Constants.IndexSchema.MAX_TIMESTAMP, minTimestamp, Long.MAX_VALUE), BooleanClause.Occur.FILTER)
+                .add(
+                    LongRange.newIntersectsQuery(
+                        Constants.IndexSchema.TIMESTAMP_RANGE,
+                        new long[] { minTimestamp },
+                        new long[] { maxTimestamp }
+                    ),
+                    BooleanClause.Occur.FILTER
+                )
                 .build();
         } catch (ParseException e) {
             throw new RuntimeException(e);

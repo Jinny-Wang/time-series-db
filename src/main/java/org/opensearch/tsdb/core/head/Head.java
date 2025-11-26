@@ -170,7 +170,11 @@ public class Head implements Closeable {
                 } else {
                     // Stub series created: increment counter
                     seriesMap.incrementStubSeriesCount();
-                    log.info("Incrementing stub series count: ref={}, labels=null (stub), currentStubCount={}", hash, seriesMap.getStubSeriesCount());
+                    log.info(
+                        "Incrementing stub series count: ref={}, labels=null (stub), currentStubCount={}",
+                        hash,
+                        seriesMap.getStubSeriesCount()
+                    );
                 }
 
                 return new SeriesResult(newSeries, true);
@@ -201,7 +205,12 @@ public class Head implements Closeable {
                 series.upgradeWithLabels(labels);
                 // Decrement stub series counter since stub is now upgraded
                 seriesMap.decrementStubSeriesCount();
-                log.info("Decrementing stub series count: ref={}, labels={}, currentStubCount={}", hash, labels, seriesMap.getStubSeriesCount());
+                log.info(
+                    "Decrementing stub series count: ref={}, labels={}, currentStubCount={}",
+                    hash,
+                    labels,
+                    seriesMap.getStubSeriesCount()
+                );
                 // MIN_TIMESTAMP is set to (sample_timestamp - OOO_cutoff) to allow retrieval of late-arriving samples.
                 long minTimestampForDoc = timestamp - oooCutoffWindow;
                 liveSeriesIndex.addSeries(labels, hash, minTimestampForDoc);
@@ -235,7 +244,11 @@ public class Head implements Closeable {
         // If this is a stub series, decrement the counter before removing
         if (series.isStub()) {
             seriesMap.decrementStubSeriesCount();
-            log.info("Decrementing stub series count (failed series): ref={}, labels=null (stub), currentStubCount={}", series.getReference(), seriesMap.getStubSeriesCount());
+            log.info(
+                "Decrementing stub series count (failed series): ref={}, labels=null (stub), currentStubCount={}",
+                series.getReference(),
+                seriesMap.getStubSeriesCount()
+            );
         }
 
         // remove failed series from the seriesMap and mark it as deleted
