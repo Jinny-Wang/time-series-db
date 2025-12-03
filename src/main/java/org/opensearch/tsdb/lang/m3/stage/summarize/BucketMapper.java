@@ -77,4 +77,22 @@ public class BucketMapper {
     public long getReferenceTime() {
         return referenceTime;
     }
+
+    /**
+     * Static utility method to calculate the bucket start for a given timestamp.
+     * This is useful for determining the adjusted start time before creating a BucketMapper instance.
+     *
+     * @param timestamp the timestamp to map to a bucket start
+     * @param interval the bucket interval
+     * @param referenceTime the reference time for bucket alignment
+     * @return the bucket start timestamp
+     */
+    public static long calculateBucketStart(long timestamp, long interval, long referenceTime) {
+        if (interval <= 0) {
+            throw new IllegalArgumentException("Interval must be positive, got: " + interval);
+        }
+        long offset = timestamp - referenceTime;
+        long bucketOffset = (offset / interval) * interval;
+        return referenceTime + bucketOffset;
+    }
 }

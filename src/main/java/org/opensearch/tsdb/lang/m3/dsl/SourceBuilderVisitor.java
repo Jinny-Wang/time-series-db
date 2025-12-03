@@ -50,6 +50,7 @@ import org.opensearch.tsdb.lang.m3.stage.TimeshiftStage;
 import org.opensearch.tsdb.lang.m3.stage.TransformNullStage;
 import org.opensearch.tsdb.lang.m3.stage.TruncateStage;
 import org.opensearch.tsdb.lang.m3.stage.UnionStage;
+import org.opensearch.tsdb.lang.m3.stage.summarize.BucketMapper;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.AggregationPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.AliasByTagsPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.AliasPlanNode;
@@ -143,14 +144,18 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         // Flag to track if time buffer was ever adjusted (non-zero)
         private boolean timeBufferAdjusted;
 
-        private Context(long timeBuffer, long timeShift, boolean timeBufferAdjusted) {
+        // Adjusted truncate start time (may be earlier than query start due to summarize alignment)
+        private Long truncateStartTime; // null means not yet set, use query start time
+
+        private Context(long timeBuffer, long timeShift, boolean timeBufferAdjusted, Long truncateStartTime) {
             this.timeBuffer = timeBuffer;
             this.timeShift = timeShift;
             this.timeBufferAdjusted = timeBufferAdjusted;
+            this.truncateStartTime = truncateStartTime;
         }
 
         private static Context newContext() {
-            return new Context(0L, 0L, false);
+            return new Context(0L, 0L, false, null);
         }
 
         private void setTimeBuffer(long timeBuffer) {
@@ -174,6 +179,17 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
 
         private boolean isTimeBufferAdjusted() {
             return timeBufferAdjusted;
+        }
+
+        private void setTruncateStartTime(long truncateStartTime) {
+            // Only set if it's earlier than current value (or not yet set)
+            if (this.truncateStartTime == null || truncateStartTime < this.truncateStartTime) {
+                this.truncateStartTime = truncateStartTime;
+            }
+        }
+
+        private Long getTruncateStartTime() {
+            return truncateStartTime;
         }
     }
 
@@ -239,7 +255,10 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         if (isRootVisitor && context.isTimeBufferAdjusted()) {
             // Check if the first element in the stack is already a TruncateStage to avoid duplicates
             if (stageStack.isEmpty() || !(stageStack.get(0) instanceof TruncateStage)) {
-                stageStack.add(0, new TruncateStage(params.startTime(), params.endTime()));
+                // Use adjusted truncate start time if set (e.g., by summarize with alignToFrom=false)
+                // Otherwise use query start time
+                long truncateStart = context.getTruncateStartTime() != null ? context.getTruncateStartTime() : params.startTime();
+                stageStack.add(0, new TruncateStage(truncateStart, params.endTime()));
             }
         }
 
@@ -353,10 +372,19 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         // Record the current buffer to re-set later.
         long originalTimeBuffer = context.getTimeBuffer();
 
+        long window;
         if (planNode.isPointBased()) {
-            throw new UnsupportedOperationException("Point-based moving windows are not yet supported, use time-based windows");
+            // Point-based: moving N means N data points, so window = N * step
+            int numPoints = planNode.getPointDuration();
+            window = (long) numPoints * params.step();
+            MovingStage movingStage = new MovingStage(window, planNode.getAggregationType());
+            stageStack.add(movingStage);
+
+            // Extend the time buffer to fetch enough historical data for the moving window
+            context.setTimeBuffer(Math.max(context.getTimeBuffer(), window));
         } else {
-            long window = getDurationAsLong(planNode.getTimeDuration());
+            // Time-based: moving 1h means 1 hour window
+            window = getDurationAsLong(planNode.getTimeDuration());
             MovingStage movingStage = new MovingStage(window, planNode.getAggregationType());
             stageStack.add(movingStage);
 
@@ -443,6 +471,14 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         // Only set reference time constant when using fixed alignment (alignToFrom=false)
         if (!alignToFrom) {
             summarizeStage.setReferenceTimeConstant(SummarizePlanNode.GO_ZERO_TIME_MILLIS);
+
+            // When alignToFrom=false, buckets align to fixed intervals from GO_ZERO_TIME
+            // This can produce samples earlier than query start time
+            // Use BucketMapper's API to calculate the adjusted start time
+            long adjustedStartTime = BucketMapper.calculateBucketStart(params.startTime(), interval, SummarizePlanNode.GO_ZERO_TIME_MILLIS);
+
+            // Track this adjusted start time for TruncateStage
+            context.setTruncateStartTime(adjustedStartTime);
         }
 
         stageStack.add(summarizeStage);
@@ -591,7 +627,10 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         // Add TruncateStage at the end if time buffer was adjusted AND this is the root visitor
         // This is the final coordinator for multi-fetch queries (union/binary operations)
         if (isRootVisitor && context.isTimeBufferAdjusted()) {
-            stages.add(new TruncateStage(params.startTime(), params.endTime()));
+            // Use adjusted truncate start time if set (e.g., by summarize with alignToFrom=false)
+            // Otherwise use query start time
+            long truncateStart = context.getTruncateStartTime() != null ? context.getTruncateStartTime() : params.startTime();
+            stages.add(new TruncateStage(truncateStart, params.endTime()));
         }
 
         // Add the left-hand side reference

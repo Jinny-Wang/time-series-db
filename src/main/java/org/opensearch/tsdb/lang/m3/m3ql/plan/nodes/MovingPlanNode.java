@@ -17,11 +17,19 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.visitor.M3PlanVisitor;
 
 import java.time.Duration;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * MovingPlanNode represents a plan node that handles moving window operations in M3QL.
  */
 public class MovingPlanNode extends M3PlanNode {
+
+    /**
+     * Pattern to match positive integers or floating-point numbers (e.g., "10", "10.5").
+     * Used to detect point-based moving windows.
+     */
+    private static final Pattern POINT_BASED_PATTERN = Pattern.compile("\\d+(\\.\\d+)?");
 
     private final String windowSize; // 2h, 5m etc.
     private final WindowAggregationType aggregationType;
@@ -62,18 +70,36 @@ public class MovingPlanNode extends M3PlanNode {
 
     /**
      * Returns the duration of the window as number of points.
+     * Supports both integer and floating-point values (e.g., "10" or "10.5").
+     * Floating-point values are truncated to integers, matching Go's behavior.
      * @return Integer number of points
      */
     public Integer getPointDuration() {
-        return Integer.parseInt(windowSize);
+        try {
+            // Parse as double to support both int and float formats, then truncate to int
+            double value = Double.parseDouble(windowSize);
+            if (value <= 0) {
+                throw new IllegalArgumentException("Point-based window size must be positive, got: " + value);
+            }
+            return (int) value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid point-based window size: " + windowSize, e);
+        }
     }
 
     /**
-     * Returns true if the moving window is point based.
+     * Returns true if the moving window is point based (numeric value without time unit).
+     * Supports both integer and floating-point formats (e.g., "10", "10.5").
      * @return boolean true if point based, false if time based
      */
     public boolean isPointBased() {
-        return windowSize != null && windowSize.trim().matches("\\d+");
+        if (windowSize == null) {
+            return false;
+        }
+        String trimmed = windowSize.trim();
+        // Match positive integers or floating-point numbers with optional decimal
+        Matcher matcher = POINT_BASED_PATTERN.matcher(trimmed);
+        return matcher.matches();
     }
 
     /**

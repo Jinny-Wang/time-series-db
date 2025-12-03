@@ -269,6 +269,91 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
     }
 
     /**
+     * Test point-based MovingPlanNode with integer value.
+     */
+    public void testMovingPlanNodePointBasedInteger() throws IOException {
+        // moving 10 sum means 10 data points
+        MovingPlanNode planNode = new MovingPlanNode(1, "10", WindowAggregationType.SUM);
+        planNode.addChild(createMockFetchNode(2));
+
+        assertTrue("Should be point-based", planNode.isPointBased());
+        assertEquals(10, planNode.getPointDuration().intValue());
+
+        SourceBuilderVisitor.ComponentHolder result = visitor.visit(planNode);
+        assertNotNull(result);
+
+        SearchSourceBuilder builder = result.toSearchSourceBuilder();
+        TimeSeriesUnfoldAggregationBuilder unfoldBuilder = (TimeSeriesUnfoldAggregationBuilder) builder.aggregations()
+            .getAggregatorFactories()
+            .iterator()
+            .next();
+
+        // Verify moving stage interval = 10 * step (10 * 10000 = 100000)
+        MovingStage movingStage = (MovingStage) unfoldBuilder.getStages().get(0);
+        try (XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()) {
+            xContentBuilder.startObject();
+            movingStage.toXContent(xContentBuilder, EMPTY_PARAMS);
+            xContentBuilder.endObject();
+            String json = xContentBuilder.toString();
+            assertTrue("Interval should be 100000 (10 points * 10000 step)", json.contains("\"interval\":100000"));
+        }
+    }
+
+    /**
+     * Test point-based MovingPlanNode with floating-point value (truncated to int).
+     */
+    public void testMovingPlanNodePointBasedFloat() throws IOException {
+        // moving 5.7 avg means 5 data points (truncated from 5.7)
+        MovingPlanNode planNode = new MovingPlanNode(1, "5.7", WindowAggregationType.AVG);
+        planNode.addChild(createMockFetchNode(2));
+
+        assertTrue("Should be point-based", planNode.isPointBased());
+        assertEquals(5, planNode.getPointDuration().intValue());
+
+        SourceBuilderVisitor.ComponentHolder result = visitor.visit(planNode);
+        assertNotNull(result);
+
+        SearchSourceBuilder builder = result.toSearchSourceBuilder();
+        TimeSeriesUnfoldAggregationBuilder unfoldBuilder = (TimeSeriesUnfoldAggregationBuilder) builder.aggregations()
+            .getAggregatorFactories()
+            .iterator()
+            .next();
+
+        // Verify moving stage interval = 5 * step (5 * 10000 = 50000)
+        MovingStage movingStage = (MovingStage) unfoldBuilder.getStages().get(0);
+        try (XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()) {
+            xContentBuilder.startObject();
+            movingStage.toXContent(xContentBuilder, EMPTY_PARAMS);
+            xContentBuilder.endObject();
+            String json = xContentBuilder.toString();
+            assertTrue("Interval should be 50000 (5 points * 10000 step)", json.contains("\"interval\":50000"));
+        }
+    }
+
+    /**
+     * Test point-based MovingPlanNode with invalid value (zero).
+     */
+    public void testMovingPlanNodePointBasedZero() {
+        MovingPlanNode planNode = new MovingPlanNode(1, "0", WindowAggregationType.SUM);
+        planNode.addChild(createMockFetchNode(2));
+
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, () -> visitor.visit(planNode));
+        assertTrue(exception.getMessage().contains("must be positive"));
+    }
+
+    /**
+     * Test point-based MovingPlanNode with invalid value (negative).
+     */
+    public void testMovingPlanNodePointBasedNegative() {
+        MovingPlanNode planNode = new MovingPlanNode(1, "-5", WindowAggregationType.SUM);
+        planNode.addChild(createMockFetchNode(2));
+
+        assertFalse("Negative should not be point-based", planNode.isPointBased());
+        // Will fail when trying to parse as time duration
+        expectThrows(IllegalArgumentException.class, () -> visitor.visit(planNode));
+    }
+
+    /**
      * Test SummarizePlanNode with correct number of children (1).
      */
     public void testSummarizePlanNodeWithOneChild() {

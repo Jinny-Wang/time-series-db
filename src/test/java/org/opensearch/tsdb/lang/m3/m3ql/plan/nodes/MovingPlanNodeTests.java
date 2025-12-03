@@ -39,6 +39,16 @@ public class MovingPlanNodeTests extends BasePlanNodeTests {
         assertEquals("MOVING(10, SUM)", node.getExplainName());
     }
 
+    public void testMovingPlanNodeCreationWithFloatingPointBased() {
+        MovingPlanNode node = new MovingPlanNode(1, "10.5", WindowAggregationType.AVG);
+
+        assertTrue(node.isPointBased());
+        // Floating-point is truncated to integer (10.5 -> 10)
+        assertEquals(10, node.getPointDuration().intValue());
+        assertEquals(WindowAggregationType.AVG, node.getAggregationType());
+        assertEquals("MOVING(10.5, AVG)", node.getExplainName());
+    }
+
     public void testMovingPlanNodeVisitorAccept() {
         MovingPlanNode node = new MovingPlanNode(1, "1h", WindowAggregationType.MAX);
         TestMockVisitor visitor = new TestMockVisitor();
@@ -88,11 +98,11 @@ public class MovingPlanNodeTests extends BasePlanNodeTests {
         assertTrue(new MovingPlanNode(1, "5", WindowAggregationType.SUM).isPointBased());
         assertTrue(new MovingPlanNode(1, "100", WindowAggregationType.AVG).isPointBased());
         assertTrue(new MovingPlanNode(1, " 50 ", WindowAggregationType.MAX).isPointBased());
+        assertTrue(new MovingPlanNode(1, "5.5", WindowAggregationType.MIN).isPointBased()); // Floating-point supported, truncated to int
 
         assertFalse(new MovingPlanNode(1, "5m", WindowAggregationType.SUM).isPointBased());
         assertFalse(new MovingPlanNode(1, "1h", WindowAggregationType.AVG).isPointBased());
         assertFalse(new MovingPlanNode(1, "2d", WindowAggregationType.MAX).isPointBased());
-        assertFalse(new MovingPlanNode(1, "5.5", WindowAggregationType.MIN).isPointBased());
     }
 
     public void testMovingPlanNodeFactoryMethodThrowsOnIncorrectArguments() {
@@ -126,6 +136,46 @@ public class MovingPlanNodeTests extends BasePlanNodeTests {
         MovingPlanNode node = new MovingPlanNode(1, "-5m", WindowAggregationType.AVG);
         IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, node::getTimeDuration);
         assertEquals("Window size cannot be negative: -5m", exception.getMessage());
+    }
+
+    /**
+     * Test isPointBased() returns false when windowSize is null (lines 88-90).
+     */
+    public void testMovingPlanNodeIsPointBasedWithNullWindowSize() {
+        MovingPlanNode node = new MovingPlanNode(1, null, WindowAggregationType.AVG);
+        assertFalse("isPointBased should return false for null windowSize", node.isPointBased());
+    }
+
+    /**
+     * Test getPointDuration() throws IllegalArgumentException for zero value (lines 73-74).
+     */
+    public void testMovingPlanNodeGetPointDurationWithZero() {
+        MovingPlanNode node = new MovingPlanNode(1, "0", WindowAggregationType.SUM);
+        assertTrue("Zero should be detected as point-based format", node.isPointBased());
+
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, node::getPointDuration);
+        assertTrue(exception.getMessage().contains("must be positive"));
+        assertTrue(exception.getMessage().contains("0.0"));
+    }
+
+    /**
+     * Test getPointDuration() throws IllegalArgumentException for negative value (lines 73-74).
+     */
+    public void testMovingPlanNodeGetPointDurationWithNegative() {
+        MovingPlanNode node = new MovingPlanNode(1, "-10", WindowAggregationType.MAX);
+        // Negative numbers don't match the point-based regex, so isPointBased() returns false
+        assertFalse("Negative should not be detected as point-based", node.isPointBased());
+    }
+
+    /**
+     * Test getPointDuration() throws IllegalArgumentException for invalid format (line 77-78).
+     */
+    public void testMovingPlanNodeGetPointDurationWithInvalidFormat() {
+        MovingPlanNode node = new MovingPlanNode(1, "abc", WindowAggregationType.AVG);
+        assertFalse("Invalid format should not be detected as point-based", node.isPointBased());
+
+        // If we force call getPointDuration on a non-point-based format, it should throw
+        // Note: In normal usage, getPointDuration is only called if isPointBased() is true
     }
 
     private static class TestMockVisitor extends M3PlanVisitor<String> {

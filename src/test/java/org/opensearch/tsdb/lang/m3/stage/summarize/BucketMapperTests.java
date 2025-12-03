@@ -83,4 +83,47 @@ public class BucketMapperTests extends OpenSearchTestCase {
         assertTrue(timestamp >= bucketStart);
         assertTrue(timestamp < bucketEnd);
     }
+
+    /**
+     * Test static calculateBucketStart utility method.
+     */
+    public void testStaticCalculateBucketStart() {
+        long interval = 3600000L; // 1 hour
+        long referenceTime = SummarizePlanNode.GO_ZERO_TIME_MILLIS;
+
+        // Test that static method produces same result as instance method
+        long timestamp = 1609459200000L; // 2021-01-01 00:00:00 UTC
+        long staticResult = BucketMapper.calculateBucketStart(timestamp, interval, referenceTime);
+
+        BucketMapper mapper = new BucketMapper(interval, referenceTime);
+        long instanceResult = mapper.mapToBucket(timestamp);
+
+        assertEquals(instanceResult, staticResult);
+    }
+
+    /**
+     * Test static method with query start time that falls mid-bucket.
+     */
+    public void testStaticCalculateBucketStartMidBucket() {
+        long interval = 3600000L; // 1 hour
+        long referenceTime = 0L; // Unix epoch
+
+        // Query starts at 8:30 AM (mid-bucket)
+        long queryStart = 8 * 3600000L + 30 * 60000L; // 8:30:00
+
+        // Should return 8:00 AM (bucket start)
+        long bucketStart = BucketMapper.calculateBucketStart(queryStart, interval, referenceTime);
+
+        assertEquals(8 * 3600000L, bucketStart); // 8:00:00
+        assertTrue(bucketStart <= queryStart);
+        assertTrue(queryStart < bucketStart + interval);
+    }
+
+    /**
+     * Test static method validates interval.
+     */
+    public void testStaticCalculateBucketStartInvalidInterval() {
+        expectThrows(IllegalArgumentException.class, () -> BucketMapper.calculateBucketStart(1000L, 0L, 0L));
+        expectThrows(IllegalArgumentException.class, () -> BucketMapper.calculateBucketStart(1000L, -1000L, 0L));
+    }
 }
