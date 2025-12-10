@@ -49,6 +49,7 @@ import org.opensearch.telemetry.tracing.Tracer;
 import org.opensearch.threadpool.ExecutorBuilder;
 import org.opensearch.threadpool.FixedExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.tsdb.lang.m3.M3QLMetrics;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
 import org.opensearch.tsdb.query.search.TimeRangePruningQueryBuilder;
 import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
@@ -58,6 +59,7 @@ import org.opensearch.tsdb.query.rest.RestM3QLAction;
 import org.opensearch.watcher.ResourceWatcherService;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -334,7 +336,9 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     ) {
         if (metricsRegistry != null) {
             this.metricsRegistry = Optional.of(metricsRegistry);
-            TSDBMetrics.initialize(metricsRegistry);
+            List<TSDBMetrics.MetricsInitializer> metricInitializers = new ArrayList<>(M3QLMetrics.getMetricsInitializers());
+
+            TSDBMetrics.initialize(metricsRegistry, metricInitializers.toArray(new TSDBMetrics.MetricsInitializer[0]));
         } else {
             logger.warn("MetricsRegistry is null; TSDB metrics not initialized");
         }

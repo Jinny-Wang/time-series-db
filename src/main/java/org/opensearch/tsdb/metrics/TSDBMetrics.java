@@ -14,6 +14,9 @@ import org.opensearch.telemetry.metrics.Histogram;
 import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /** TSDB metrics: counters and histograms initialized once via telemetry. */
 public class TSDBMetrics {
     private static final Logger logger = LogManager.getLogger(TSDBMetrics.class);
@@ -23,13 +26,30 @@ public class TSDBMetrics {
     public static final TSDBIndexMetrics INDEX = new TSDBIndexMetrics();
     public static final TSDBAggregationMetrics AGGREGATION = new TSDBAggregationMetrics();
 
+    // List of other custom metrics initializers. This is mainly used for tests cleanup.
+    private static final List<MetricsInitializer> otherMetricsInitializers = new ArrayList<>();
+
     // Public constructor for testing
     public TSDBMetrics() {}
+
+    /** Interface for initializing and cleaning up custom metrics. */
+    public interface MetricsInitializer {
+        /**
+         * Register custom metrics with the provided registry.
+         * @param registry The OpenSearch TelemetryPlug MetricsRegistry to register metrics with.
+         */
+        void register(MetricsRegistry registry);
+
+        /**
+         * Cleanup custom metrics (for tests).
+         */
+        void cleanup();
+    }
 
     /**
      * Initialize all TSDB metrics. Safe to call once; subsequent calls are ignored.
      */
-    public static synchronized void initialize(MetricsRegistry metricsRegistry) {
+    public static synchronized void initialize(MetricsRegistry metricsRegistry, MetricsInitializer... initializers) {
         if (metricsRegistry == null) {
             throw new IllegalArgumentException("MetricsRegistry cannot be null");
         }
@@ -47,6 +67,12 @@ public class TSDBMetrics {
         ENGINE.initialize(metricsRegistry);
         INDEX.initialize(metricsRegistry);
         AGGREGATION.initialize(metricsRegistry);
+
+        for (MetricsInitializer registrator : initializers) {
+            registrator.register(metricsRegistry);
+            // Keep track of custom initializers for cleanup in tests
+            otherMetricsInitializers.add(registrator);
+        }
 
         // Only set registry after successful initialization
         registry = metricsRegistry;
@@ -121,6 +147,9 @@ public class TSDBMetrics {
         ENGINE.cleanup();
         INDEX.cleanup();
         AGGREGATION.cleanup();
+        for (MetricsInitializer registrator : otherMetricsInitializers) {
+            registrator.cleanup();
+        }
         logger.info("TSDB metrics cleanup completed");
     }
 }

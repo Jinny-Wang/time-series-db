@@ -225,6 +225,10 @@ def numZones = findProperty('numZones') as Integer ?: 1
 testClusters.integTest {
     testDistribution = "ARCHIVE"
 
+    // Enable feature flags for telemetryPlugin
+//    systemProperty 'opensearch.experimental.feature.telemetry.enabled', 'true'
+//    setting 'telemetry.feature.metrics.enabled', 'true'
+
     if (numZones > 1) numberOfZones = numZones
     if (numNodes > 1) numberOfNodes = numNodes
 

@@ -7,6 +7,7 @@
  */
 package org.opensearch.tsdb.query.rest;
 
+import org.mockito.ArgumentCaptor;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.core.common.bytes.BytesArray;
@@ -17,6 +18,7 @@ import org.opensearch.rest.RestHandler.Route;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.search.aggregations.AggregatorFactories;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.test.rest.FakeRestChannel;
 import org.opensearch.test.rest.FakeRestRequest;
@@ -33,8 +35,12 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.assertArg;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * Unit tests for {@link RestM3QLAction}, the REST handler for M3QL query execution.
@@ -805,5 +811,114 @@ public class RestM3QLActionTests extends OpenSearchTestCase {
         action.handleRequest(request, channel, mockClient);
 
         assertThat(channel.capturedResponse().status(), equalTo(RestStatus.OK));
+    }
+
+    // ========== Metrics Tests ==========
+
+    /**
+     * Test that RestM3QLAction increments requestsTotal counter on successful query.
+     */
+    public void testMetricsIncrementedOnSuccessfulQuery() throws Exception {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(RestM3QLAction.Metrics.REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with M3QL metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, RestM3QLAction.getMetricsInitializer());
+
+        // Setup mock client
+        NodeClient mockClient = setupMockClientWithAssertion(this::assertContainsTimeSeriesUnfoldAggregation);
+
+        // Execute a query
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api"))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        ArgumentCaptor<Tags> tagsCaptor = ArgumentCaptor.forClass(Tags.class);
+
+        // Verify counter was incremented and capture tags
+        verify(mockCounter).add(eq(1.0d), tagsCaptor.capture());
+        Tags capturedTags = tagsCaptor.getValue();
+        assertThat(capturedTags.getTagsMap(), equalTo(Map.of("pushdown", true, "reached_step", "search", "explain", false)));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    /**
+     * Test that RestM3QLAction increments requestsTotal counter on explain query.
+     */
+    public void testMetricsIncrementedOnExplainQuery() throws Exception {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(RestM3QLAction.Metrics.REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with M3QL metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, RestM3QLAction.getMetricsInitializer());
+
+        // Execute an explain query
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", "fetch service:api", "explain", "true"))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        // Verify counter was incremented and capture tags
+        verify(mockCounter).add(eq(1.0d), assertArg(tags -> {
+            assertThat(tags.getTagsMap(), equalTo(Map.of("explain", true, "pushdown", true, "reached_step", "explain")));
+        }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    /**
+     * Test that RestM3QLAction increments requestsTotal counter on error (empty query).
+     */
+    public void testMetricsIncrementedOnErrorQuery() throws Exception {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(RestM3QLAction.Metrics.REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with M3QL metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, RestM3QLAction.getMetricsInitializer());
+
+        // Execute a query with empty query parameter
+        FakeRestRequest request = new FakeRestRequest.Builder(xContentRegistry()).withMethod(RestRequest.Method.GET)
+            .withPath("/_m3ql")
+            .withParams(Map.of("query", ""))
+            .build();
+        FakeRestChannel channel = new FakeRestChannel(request, true, 1);
+
+        action.handleRequest(request, channel, mockClient);
+
+        // Verify counter was incremented and capture tags
+        verify(mockCounter).add(eq(1.0d), assertArg(tags -> {
+            assertThat(tags.getTagsMap(), equalTo(Map.of("explain", false, "pushdown", true, "reached_step", "error__missing_query")));
+        }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
     }
 }

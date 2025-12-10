@@ -13,6 +13,9 @@ import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.search.aggregations.PipelineAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.filter.FilterAggregationBuilder;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.tsdb.core.mapping.Constants;
 import org.opensearch.tsdb.core.model.LabelConstants;
 import org.opensearch.tsdb.lang.m3.common.AggregationType;
@@ -85,6 +88,8 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.UnionPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.nodes.ValueFilterPlanNode;
 import org.opensearch.tsdb.lang.m3.m3ql.plan.visitor.M3PlanVisitor;
 import org.opensearch.tsdb.lang.m3.stage.ValueFilterStage;
+import org.opensearch.tsdb.metrics.TSDBMetrics;
+import org.opensearch.tsdb.metrics.TSDBMetricsConstants;
 import org.opensearch.tsdb.query.search.TimeRangePruningQueryBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregationBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregator;
@@ -113,6 +118,7 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
     private static final String COORDINATOR_NAME_SUFFIX = "_coordinator";
     private static final char MULTI_CHAR_WILDCARD = '*';
     private static final char SINGLE_CHAR_WILDCARD = '?';
+    private static final Metrics METRICS = new Metrics();
 
     private final Stack<UnaryPipelineStage> stageStack; // accumulate stages per fetch pipeline
     private final M3OSTranslator.Params params;
@@ -126,6 +132,10 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
      */
     public SourceBuilderVisitor(M3OSTranslator.Params params) {
         this(params, Context.newContext(), true);
+    }
+
+    public static TSDBMetrics.MetricsInitializer getMetricsInitializer() {
+        return METRICS;
     }
 
     /**
@@ -285,6 +295,8 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         List<UnaryPipelineStage> unfoldStages = new ArrayList<>();
 
         if (!shouldDisablePushdown(params)) {
+            TSDBMetrics.incrementCounter(METRICS.pushdownRequestsTotal, 1, Tags.create().addTag("mode", "enabled"));
+
             // Normal pushdown behavior: add stages until we hit a coordinator-only or global aggregation
             while (!stageStack.isEmpty() && !stageStack.peek().isCoordinatorOnly() && !stageStack.peek().isGlobalAggregation()) {
                 unfoldStages.add(stageStack.pop());
@@ -295,6 +307,9 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
             if (!stageStack.isEmpty() && !stageStack.peek().isCoordinatorOnly()) {
                 unfoldStages.add(stageStack.pop());
             }
+        } else {
+            // emit metric
+            TSDBMetrics.incrementCounter(METRICS.pushdownRequestsTotal, 1, Tags.create().addTag("mode", "disabled"));
         }
 
         TimeSeriesUnfoldAggregationBuilder unfoldPipelineAggregationBuilder = new TimeSeriesUnfoldAggregationBuilder(
@@ -973,6 +988,28 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
                 searchSourceBuilder.aggregation(pipelineAgg);
             }
             return searchSourceBuilder;
+        }
+    }
+
+    /**
+     * Metrics container for SourceBuilderVisitor.
+     */
+    static class Metrics implements TSDBMetrics.MetricsInitializer {
+        static final String PUSHDOWN_REQUESTS_TOTAL_METRIC_NAME = "tsdb.lang.m3ql.source_builder_visitor.pushdown.total";
+        Counter pushdownRequestsTotal;
+
+        @Override
+        public void register(MetricsRegistry registry) {
+            pushdownRequestsTotal = registry.createCounter(
+                PUSHDOWN_REQUESTS_TOTAL_METRIC_NAME,
+                "total number of pushdown vs non-pushdown m3ql fetch statements processed",
+                TSDBMetricsConstants.UNIT_COUNT
+            );
+        }
+
+        @Override
+        public void cleanup() {
+            pushdownRequestsTotal = null;
         }
     }
 }

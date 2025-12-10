@@ -19,9 +19,14 @@ import org.opensearch.rest.BaseRestHandler;
 import org.opensearch.rest.BytesRestResponse;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.telemetry.metrics.Counter;
+import org.opensearch.telemetry.metrics.MetricsRegistry;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.transport.client.node.NodeClient;
 import org.opensearch.tsdb.core.utils.Constants;
 import org.opensearch.tsdb.lang.m3.dsl.M3OSTranslator;
+import org.opensearch.tsdb.metrics.TSDBMetrics;
+import org.opensearch.tsdb.metrics.TSDBMetricsConstants;
 import org.opensearch.tsdb.query.federation.FederationMetadata;
 import org.opensearch.tsdb.query.utils.AggregationNameExtractor;
 
@@ -126,10 +131,21 @@ public class RestM3QLAction extends BaseRestHandler {
     // Date parser for consistent time parsing across OpenSearch
     private static final DateMathParser DATE_MATH_PARSER = DateFormatter.forPattern(DATE_FORMAT_PATTERN).toDateMathParser();
 
+    private static final Metrics METRICS = new Metrics();
+
     /**
      * Constructs a new RestM3QLAction handler.
      */
     public RestM3QLAction() {}
+
+    /**
+     * Returns the metrics container initializer for M3QL REST actions.
+     *
+     * @return metrics initializer
+     */
+    public static TSDBMetrics.MetricsInitializer getMetricsInitializer() {
+        return METRICS;
+    }
 
     @Override
     public String getName() {
@@ -145,55 +161,67 @@ public class RestM3QLAction extends BaseRestHandler {
     protected RestChannelConsumer prepareRequest(RestRequest request, NodeClient client) throws IOException {
         // Parse and validate request parameters
         final RequestParams params;
+        final Tags tags = Tags.create().addTag("explain", "unknown").addTag("pushdown", "unknown");
         try {
-            params = parseRequestParams(request);
-        } catch (IllegalArgumentException e) {
-            return channel -> {
-                XContentBuilder response = channel.newErrorBuilder();
-                response.startObject();
-                response.field(ERROR_FIELD, e.getMessage());
-                response.endObject();
-                channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
-            };
-        }
-
-        // Validate query
-        if (params.query == null || params.query.trim().isEmpty()) {
-            return channel -> {
-                XContentBuilder response = channel.newErrorBuilder();
-                response.startObject();
-                response.field(ERROR_FIELD, "Query cannot be empty");
-                response.endObject();
-                channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
-            };
-        }
-
-        // Translate M3QL to OpenSearch DSL
-        try {
-            final SearchSourceBuilder searchSourceBuilder = translateQuery(params);
-
-            // Handle explain mode
-            if (params.explain) {
-                return buildExplainResponse(params.query, searchSourceBuilder);
+            try {
+                params = parseRequestParams(request);
+                tags.addTag("explain", params.explain()).addTag("pushdown", params.pushdown());
+            } catch (IllegalArgumentException e) {
+                tags.addTag("reached_step", "error__parse_request_params");
+                return channel -> {
+                    XContentBuilder response = channel.newErrorBuilder();
+                    response.startObject();
+                    response.field(ERROR_FIELD, e.getMessage());
+                    response.endObject();
+                    channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
+                };
             }
 
-            // Build and execute search request
-            final SearchRequest searchRequest = buildSearchRequest(params, searchSourceBuilder);
-            final String finalAggName = AggregationNameExtractor.getFinalAggregationName(searchSourceBuilder);
+            // Validate query
+            if (params.query == null || params.query.trim().isEmpty()) {
+                tags.addTag("reached_step", "error__missing_query");
+                return channel -> {
+                    XContentBuilder response = channel.newErrorBuilder();
+                    response.startObject();
+                    response.field(ERROR_FIELD, "Query cannot be empty");
+                    response.endObject();
+                    channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
+                };
+            }
 
-            return channel -> client.search(
-                searchRequest,
-                new PromMatrixResponseListener(channel, finalAggName, params.profile, params.includeMetadata)
-            );
+            // Translate M3QL to OpenSearch DSL
+            try {
+                tags.addTag("reached_step", "translate_query");
+                final SearchSourceBuilder searchSourceBuilder = translateQuery(params);
 
-        } catch (Exception e) {
-            return channel -> {
-                XContentBuilder response = channel.newErrorBuilder();
-                response.startObject();
-                response.field(ERROR_FIELD, e.getMessage());
-                response.endObject();
-                channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
-            };
+                // Handle explain mode
+                if (params.explain) {
+                    tags.addTag("reached_step", "explain");
+                    return buildExplainResponse(params.query, searchSourceBuilder);
+                }
+
+                // Build and execute search request
+                tags.addTag("reached_step", "build_search_request");
+                final SearchRequest searchRequest = buildSearchRequest(params, searchSourceBuilder);
+                final String finalAggName = AggregationNameExtractor.getFinalAggregationName(searchSourceBuilder);
+
+                tags.addTag("reached_step", "search");
+                return channel -> client.search(
+                    searchRequest,
+                    new PromMatrixResponseListener(channel, finalAggName, params.profile, params.includeMetadata)
+                );
+
+            } catch (Exception e) {
+                return channel -> {
+                    XContentBuilder response = channel.newErrorBuilder();
+                    response.startObject();
+                    response.field(ERROR_FIELD, e.getMessage());
+                    response.endObject();
+                    channel.sendResponse(new BytesRestResponse(RestStatus.BAD_REQUEST, response));
+                };
+            }
+        } finally {
+            TSDBMetrics.incrementCounter(METRICS.requestsTotal, 1, tags);
         }
     }
 
@@ -341,5 +369,27 @@ public class RestM3QLAction extends BaseRestHandler {
      */
     protected record RequestParams(String query, long startMs, long endMs, long stepMs, String[] indices, boolean explain, boolean pushdown,
         boolean profile, boolean includeMetadata, FederationMetadata federationMetadata) {
+    }
+
+    /**
+     * Metrics container for RestM3QLAction.
+     */
+    static class Metrics implements TSDBMetrics.MetricsInitializer {
+        static final String REQUESTS_TOTAL_METRIC_NAME = "tsdb.action.rest.m3ql.queries.total";
+        Counter requestsTotal;
+
+        @Override
+        public void register(MetricsRegistry registry) {
+            requestsTotal = registry.createCounter(
+                REQUESTS_TOTAL_METRIC_NAME,
+                "total number of queries handled by the RestM3QLAction rest handler",
+                TSDBMetricsConstants.UNIT_COUNT
+            );
+        }
+
+        @Override
+        public synchronized void cleanup() {
+            requestsTotal = null;
+        }
     }
 }

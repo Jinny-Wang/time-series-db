@@ -61,6 +61,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import static org.hamcrest.Matchers.equalTo;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.assertArg;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS;
 
 /**
@@ -933,5 +939,226 @@ public class SourceBuilderVisitorTests extends OpenSearchTestCase {
         Map<String, List<String>> matchFilters = Map.of("__name__", List.of("test_metric"));
         Map<String, List<String>> inverseMatchFilters = Map.of();
         return new FetchPlanNode(id, matchFilters, inverseMatchFilters);
+    }
+
+    // ========== Metrics Tests ==========
+
+    /**
+     * Test that SourceBuilderVisitor increments pushdownRequestsTotal counter with mode=enabled.
+     */
+    public void testMetricsIncrementedWithPushdownEnabled() {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(SourceBuilderVisitor.Metrics.PUSHDOWN_REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with SourceBuilderVisitor metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, SourceBuilderVisitor.getMetricsInitializer());
+
+        // Create visitor with pushdown enabled
+        M3OSTranslator.Params params = new M3OSTranslator.Params(
+            Constants.Time.DEFAULT_TIME_UNIT,
+            1000000L,
+            2000000L,
+            10000L,
+            true, // pushdown enabled
+            false,
+            null
+        );
+        SourceBuilderVisitor visitor = new SourceBuilderVisitor(params);
+
+        // Visit a fetch node (this triggers the metric increment in visitFetch)
+        FetchPlanNode fetchNode = createMockFetchNode(1);
+        visitor.visit(fetchNode);
+
+        // Verify counter was incremented and capture tags
+
+        // Assert tag values
+        verify(mockCounter).add(eq(1.0), assertArg(tags -> { assertThat(tags.getTagsMap(), equalTo(Map.of("mode", "enabled"))); }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    /**
+     * Test that SourceBuilderVisitor increments pushdownRequestsTotal counter with mode=disabled.
+     */
+    public void testMetricsIncrementedWithPushdownDisabled() {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(SourceBuilderVisitor.Metrics.PUSHDOWN_REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with SourceBuilderVisitor metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, SourceBuilderVisitor.getMetricsInitializer());
+
+        // Create visitor with pushdown disabled
+        M3OSTranslator.Params params = new M3OSTranslator.Params(
+            Constants.Time.DEFAULT_TIME_UNIT,
+            1000000L,
+            2000000L,
+            10000L,
+            false, // pushdown disabled
+            false,
+            null
+        );
+        SourceBuilderVisitor visitor = new SourceBuilderVisitor(params);
+
+        // Visit a fetch node (this triggers the metric increment in visitFetch)
+        FetchPlanNode fetchNode = createMockFetchNode(1);
+        visitor.visit(fetchNode);
+
+        // Verify counter was incremented and capture tags
+        verify(mockCounter).add(eq(1.0), assertArg(tags -> { assertThat(tags.getTagsMap(), equalTo(Map.of("mode", "disabled"))); }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    /**
+     * Test that SourceBuilderVisitor increments pushdownRequestsTotal counter with mode=enabled
+     * when federationMetadata has non-overlapping partitions.
+     */
+    public void testMetricsIncrementedWithFederationMetadataNoOverlap() {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(SourceBuilderVisitor.Metrics.PUSHDOWN_REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with SourceBuilderVisitor metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, SourceBuilderVisitor.getMetricsInitializer());
+
+        // Create federationMetadata with non-overlapping partitions
+        RoutingKey serviceApi = new RoutingKey("service", "api");
+        PartitionWindow window = new PartitionWindow("cluster1:index-a", 1000000L, 2000000L, List.of(serviceApi));
+        ResolvedPartition partition = new ResolvedPartition("fetch service:api", List.of(window));
+        FederationMetadata federationMetadata = new ResolvedPartitions(List.of(partition));
+
+        // Create visitor with pushdown enabled and non-overlapping partitions
+        M3OSTranslator.Params params = new M3OSTranslator.Params(
+            Constants.Time.DEFAULT_TIME_UNIT,
+            1000000L,
+            2000000L,
+            10000L,
+            true, // pushdown enabled
+            false,
+            federationMetadata
+        );
+        SourceBuilderVisitor visitor = new SourceBuilderVisitor(params);
+
+        // Visit a fetch node (this triggers the metric increment in visitFetch)
+        FetchPlanNode fetchNode = createMockFetchNode(1);
+        visitor.visit(fetchNode);
+
+        // Verify counter was incremented with mode=enabled (no overlap, so pushdown stays enabled)
+        verify(mockCounter).add(eq(1.0), assertArg(tags -> { assertThat(tags.getTagsMap(), equalTo(Map.of("mode", "enabled"))); }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    /**
+     * Test that SourceBuilderVisitor increments pushdownRequestsTotal counter with mode=disabled
+     * when federationMetadata has overlapping partitions (overrides pushdown=true arg).
+     */
+    public void testMetricsIncrementedWithFederationMetadataOverlappingPartitions() {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(SourceBuilderVisitor.Metrics.PUSHDOWN_REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with SourceBuilderVisitor metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, SourceBuilderVisitor.getMetricsInitializer());
+
+        // Create federationMetadata with overlapping partitions
+        RoutingKey serviceApi = new RoutingKey("service", "api");
+        PartitionWindow window1 = new PartitionWindow("cluster1:index-a", 1000000L, 2500000L, List.of(serviceApi));
+        PartitionWindow window2 = new PartitionWindow("cluster2:index-b", 2000000L, 3000000L, List.of(serviceApi));
+        ResolvedPartition partition = new ResolvedPartition("fetch service:api", List.of(window1, window2));
+        FederationMetadata federationMetadata = new ResolvedPartitions(List.of(partition));
+
+        // Create visitor with pushdown enabled BUT overlapping partitions (should override to disabled)
+        M3OSTranslator.Params params = new M3OSTranslator.Params(
+            Constants.Time.DEFAULT_TIME_UNIT,
+            1000000L,
+            2000000L,
+            10000L,
+            true, // pushdown arg enabled
+            false,
+            federationMetadata // but overlapping partitions override this
+        );
+        SourceBuilderVisitor visitor = new SourceBuilderVisitor(params);
+
+        // Visit a fetch node (this triggers the metric increment in visitFetch)
+        FetchPlanNode fetchNode = createMockFetchNode(1);
+        visitor.visit(fetchNode);
+
+        // Verify counter was incremented with mode=disabled (overlap overrides pushdown=true)
+        verify(mockCounter).add(eq(1.0), assertArg(tags -> { assertThat(tags.getTagsMap(), equalTo(Map.of("mode", "disabled"))); }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+    }
+
+    /**
+     * Test that SourceBuilderVisitor increments pushdownRequestsTotal counter with mode=disabled
+     * when pushdown arg is false with non-overlapping partitions (respects arg value).
+     */
+    public void testMetricsIncrementedWithPushdownDisabledAndNoOverlappingPartitions() {
+        // Setup metrics with mocks
+        org.opensearch.telemetry.metrics.MetricsRegistry mockRegistry = mock(org.opensearch.telemetry.metrics.MetricsRegistry.class);
+        org.opensearch.telemetry.metrics.Counter mockCounter = mock(org.opensearch.telemetry.metrics.Counter.class);
+
+        org.mockito.Mockito.when(
+            mockRegistry.createCounter(eq(SourceBuilderVisitor.Metrics.PUSHDOWN_REQUESTS_TOTAL_METRIC_NAME), anyString(), anyString())
+        ).thenReturn(mockCounter);
+
+        // Initialize TSDBMetrics with SourceBuilderVisitor metrics
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
+        org.opensearch.tsdb.metrics.TSDBMetrics.initialize(mockRegistry, SourceBuilderVisitor.getMetricsInitializer());
+
+        // Create federationMetadata with NON-overlapping partitions
+        RoutingKey serviceApi = new RoutingKey("service", "api");
+        PartitionWindow window = new PartitionWindow("cluster1:index-a", 1000000L, 2000000L, List.of(serviceApi));
+        ResolvedPartition partition = new ResolvedPartition("fetch service:api", List.of(window));
+        FederationMetadata federationMetadata = new ResolvedPartitions(List.of(partition));
+
+        // Create visitor with pushdown disabled and non-overlapping partitions (respects arg value)
+        M3OSTranslator.Params params = new M3OSTranslator.Params(
+            Constants.Time.DEFAULT_TIME_UNIT,
+            1000000L,
+            2000000L,
+            10000L,
+            false, // pushdown disabled by arg
+            false,
+            federationMetadata // partitions don't interfere
+        );
+        SourceBuilderVisitor visitor = new SourceBuilderVisitor(params);
+
+        // Visit a fetch node (this triggers the metric increment in visitFetch)
+        FetchPlanNode fetchNode = createMockFetchNode(1);
+        visitor.visit(fetchNode);
+
+        // Verify counter was incremented with mode=disabled (respects arg value when partitions don't interfere)
+        verify(mockCounter).add(eq(1.0), assertArg(tags -> { assertThat(tags.getTagsMap(), equalTo(Map.of("mode", "disabled"))); }));
+
+        // Cleanup
+        org.opensearch.tsdb.metrics.TSDBMetrics.cleanup();
     }
 }

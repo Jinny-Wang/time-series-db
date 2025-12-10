@@ -13,6 +13,8 @@ import org.opensearch.telemetry.metrics.MetricsRegistry;
 import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -280,5 +282,16 @@ public class TSDBMetricsTests extends OpenSearchTestCase {
         TSDBMetrics.cleanup(); // Second call should not throw
 
         assertFalse(TSDBMetrics.isInitialized());
+    }
+
+    public void testAdditionalInitializers() {
+        var initializer1 = mock(TSDBMetrics.MetricsInitializer.class);
+        var initializer2 = mock(TSDBMetrics.MetricsInitializer.class);
+        var initializers = List.of(initializer1, initializer2);
+        TSDBMetrics.initialize(registry, initializers.toArray(new TSDBMetrics.MetricsInitializer[0]));
+        assertTrue(TSDBMetrics.isInitialized());
+
+        verify(initializer1).register(registry);
+        verify(initializer2).register(registry);
     }
 }
