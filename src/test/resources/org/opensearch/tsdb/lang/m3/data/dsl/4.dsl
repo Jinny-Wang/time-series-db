@@ -32,10 +32,12 @@
                 ],
                 "must_not" : [
                   {
-                    "wildcard" : {
-                      "labels" : {
-                        "wildcard" : "region:north*",
-                        "boost" : 1.0
+                    "cached_wildcard" : {
+                      "wildcard" : {
+                        "labels" : {
+                          "wildcard" : "region:north*",
+                          "boost" : 1.0
+                        }
                       }
                     }
                   }
@@ -153,10 +155,12 @@
               ],
               "must_not" : [
                 {
-                  "wildcard" : {
-                    "labels" : {
-                      "wildcard" : "region:north*",
-                      "boost" : 1.0
+                  "cached_wildcard" : {
+                    "wildcard" : {
+                      "labels" : {
+                        "wildcard" : "region:north*",
+                        "boost" : 1.0
+                      }
                     }
                   }
                 }

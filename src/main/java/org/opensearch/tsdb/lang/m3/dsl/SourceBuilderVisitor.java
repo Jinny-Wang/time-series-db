@@ -90,6 +90,7 @@ import org.opensearch.tsdb.lang.m3.m3ql.plan.visitor.M3PlanVisitor;
 import org.opensearch.tsdb.lang.m3.stage.ValueFilterStage;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
 import org.opensearch.tsdb.metrics.TSDBMetricsConstants;
+import org.opensearch.tsdb.query.search.CachedWildcardQueryBuilder;
 import org.opensearch.tsdb.query.search.TimeRangePruningQueryBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregationBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregator;
@@ -747,7 +748,7 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
         if (values.size() == 1) {
             String value = values.getFirst();
             if (containsWildcard(value)) {
-                return QueryBuilders.wildcardQuery(Constants.IndexSchema.LABELS, labelFilterString(field, value));
+                return new CachedWildcardQueryBuilder(Constants.IndexSchema.LABELS, labelFilterString(field, value));
             } else {
                 return QueryBuilders.termsQuery(Constants.IndexSchema.LABELS, labelFilterString(field, value));
             }
@@ -781,7 +782,7 @@ public class SourceBuilderVisitor extends M3PlanVisitor<SourceBuilderVisitor.Com
 
             // Add wildcard queries
             for (String value : wildcardValues) {
-                innerBool.should(QueryBuilders.wildcardQuery(Constants.IndexSchema.LABELS, labelFilterString(field, value)));
+                innerBool.should(new CachedWildcardQueryBuilder(Constants.IndexSchema.LABELS, labelFilterString(field, value)));
             }
 
             innerBool.minimumShouldMatch(1);

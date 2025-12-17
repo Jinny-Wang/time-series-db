@@ -158,10 +158,12 @@
                     }
                   },
                   {
-                    "wildcard" : {
-                      "labels" : {
-                        "wildcard" : "error_type:*",
-                        "boost" : 1.0
+                    "cached_wildcard" : {
+                      "wildcard" : {
+                        "labels" : {
+                          "wildcard" : "error_type:*",
+                          "boost" : 1.0
+                        }
                       }
                     }
                   }
@@ -427,10 +429,12 @@
                   }
                 },
                 {
-                  "wildcard" : {
-                    "labels" : {
-                      "wildcard" : "error_type:*",
-                      "boost" : 1.0
+                  "cached_wildcard" : {
+                    "wildcard" : {
+                      "labels" : {
+                        "wildcard" : "error_type:*",
+                        "boost" : 1.0
+                      }
                     }
                   }
                 }

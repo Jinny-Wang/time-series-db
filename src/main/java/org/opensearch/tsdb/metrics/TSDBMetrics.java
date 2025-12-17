@@ -25,6 +25,7 @@ public class TSDBMetrics {
     public static final TSDBEngineMetrics ENGINE = new TSDBEngineMetrics();
     public static final TSDBIndexMetrics INDEX = new TSDBIndexMetrics();
     public static final TSDBAggregationMetrics AGGREGATION = new TSDBAggregationMetrics();
+    public static final TSDBSearchMetrics SEARCH = new TSDBSearchMetrics();
 
     // List of other custom metrics initializers. This is mainly used for tests cleanup.
     private static final List<MetricsInitializer> otherMetricsInitializers = new ArrayList<>();
@@ -67,6 +68,7 @@ public class TSDBMetrics {
         ENGINE.initialize(metricsRegistry);
         INDEX.initialize(metricsRegistry);
         AGGREGATION.initialize(metricsRegistry);
+        SEARCH.initialize(metricsRegistry);
 
         for (MetricsInitializer registrator : initializers) {
             registrator.register(metricsRegistry);
@@ -147,6 +149,7 @@ public class TSDBMetrics {
         ENGINE.cleanup();
         INDEX.cleanup();
         AGGREGATION.cleanup();
+        SEARCH.cleanup();
         for (MetricsInitializer registrator : otherMetricsInitializers) {
             registrator.cleanup();
         }

@@ -38,10 +38,12 @@
                     }
                   },
                   {
-                    "wildcard" : {
-                      "labels" : {
-                        "wildcard" : "region:us-*",
-                        "boost" : 1.0
+                    "cached_wildcard" : {
+                      "wildcard" : {
+                        "labels" : {
+                          "wildcard" : "region:us-*",
+                          "boost" : 1.0
+                        }
                       }
                     }
                   }

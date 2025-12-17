@@ -32,10 +32,12 @@
                     }
                   },
                   {
-                    "wildcard" : {
-                      "labels" : {
-                        "wildcard" : "dc:sfo*",
-                        "boost" : 1.0
+                    "cached_wildcard" : {
+                      "wildcard" : {
+                        "labels" : {
+                          "wildcard" : "dc:sfo*",
+                          "boost" : 1.0
+                        }
                       }
                     }
                   }
@@ -76,10 +78,12 @@
                     }
                   },
                   {
-                    "wildcard" : {
-                      "labels" : {
-                        "wildcard" : "dc:sjc*",
-                        "boost" : 1.0
+                    "cached_wildcard" : {
+                      "wildcard" : {
+                        "labels" : {
+                          "wildcard" : "dc:sjc*",
+                          "boost" : 1.0
+                        }
                       }
                     }
                   }
@@ -129,10 +133,12 @@
                   }
                 },
                 {
-                  "wildcard" : {
-                    "labels" : {
-                      "wildcard" : "dc:sfo*",
-                      "boost" : 1.0
+                  "cached_wildcard" : {
+                    "wildcard" : {
+                      "labels" : {
+                        "wildcard" : "dc:sfo*",
+                        "boost" : 1.0
+                      }
                     }
                   }
                 }
@@ -192,10 +198,12 @@
                   }
                 },
                 {
-                  "wildcard" : {
-                    "labels" : {
-                      "wildcard" : "dc:sjc*",
-                      "boost" : 1.0
+                  "cached_wildcard" : {
+                    "wildcard" : {
+                      "labels" : {
+                        "wildcard" : "dc:sjc*",
+                        "boost" : 1.0
+                      }
                     }
                   }
                 }

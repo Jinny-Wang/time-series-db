@@ -113,6 +113,22 @@ public final class TSDBMetricsConstants {
     public static final String AGGREGATION_SERIES_TOTAL = "tsdb.aggregation.series.total";
 
     // ============================================
+    // Search Metrics (Query Cache)
+    // ============================================
+
+    /** Counter: Total wildcard query cache hits */
+    public static final String SEARCH_WILDCARD_CACHE_HITS_TOTAL = "tsdb.search.wildcard_cache.hits.total";
+
+    /** Counter: Total wildcard query cache misses */
+    public static final String SEARCH_WILDCARD_CACHE_MISSES_TOTAL = "tsdb.search.wildcard_cache.misses.total";
+
+    /** Counter: Total wildcard query cache evictions */
+    public static final String SEARCH_WILDCARD_CACHE_EVICTIONS_TOTAL = "tsdb.search.wildcard_cache.evictions.total";
+
+    /** Histogram: Current wildcard query cache size (number of entries) */
+    public static final String SEARCH_WILDCARD_CACHE_SIZE = "tsdb.search.wildcard_cache.size";
+
+    // ============================================
     // Refresh/Visibility Metrics
     // ============================================
 
@@ -201,6 +217,13 @@ public final class TSDBMetricsConstants {
     public static final String AGGREGATION_CHUNKS_FOR_DOC_ERRORS_TOTAL_DESC = "Total errors in chunksForDoc() operations";
     public static final String AGGREGATION_RESULTS_TOTAL_DESC = "Total queries tagged by result status (empty or hits)";
     public static final String AGGREGATION_SERIES_TOTAL_DESC = "Number of time series returned per query";
+
+    // Search Metrics
+    public static final String SEARCH_WILDCARD_CACHE_HITS_TOTAL_DESC = "Total wildcard query cache hits";
+    public static final String SEARCH_WILDCARD_CACHE_MISSES_TOTAL_DESC = "Total wildcard query cache misses";
+    public static final String SEARCH_WILDCARD_CACHE_EVICTIONS_TOTAL_DESC = "Total wildcard query cache evictions";
+    public static final String SEARCH_WILDCARD_CACHE_SIZE_DESC = "Current wildcard query cache size (number of entries)";
+
     // Refresh/Visibility Metrics
     public static final String REFRESH_INTERVAL_DESC = "Time between NRT refreshes (new series visibility lag)";
 

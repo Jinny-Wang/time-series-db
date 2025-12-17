@@ -51,6 +51,7 @@ import org.opensearch.threadpool.FixedExecutorBuilder;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.tsdb.lang.m3.M3QLMetrics;
 import org.opensearch.tsdb.metrics.TSDBMetrics;
+import org.opensearch.tsdb.query.search.CachedWildcardQueryBuilder;
 import org.opensearch.tsdb.query.search.TimeRangePruningQueryBuilder;
 import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregationBuilder;
@@ -311,12 +312,41 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     );
 
     /**
+     * Setting for the maximum size of the wildcard query cache( i.e., how many compiled wildcard automaton
+     * queries are cached). Under the hood, it is using opensearch default cache and its max weight to set
+     * the size with each complied wildcard query weighted as 1.
+     * Default is 0 (disabled). Set to a positive value to enable caching.
+     * This is a cluster-level setting since the cache is shared globally.
+     */
+    public static final Setting<Integer> TSDB_ENGINE_WILDCARD_QUERY_CACHE_MAX_SIZE = Setting.intSetting(
+        "tsdb_engine.search.wildcard_query.cache.max_size",
+        0,     // default: 0 (cache disabled by default)
+        0,     // minimum: 0 (cache disabled)
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Setting for the cache expiration time after last access.
+     * Entries that haven't been accessed for this duration will be evicted.
+     * This is a cluster-level setting since the cache is shared globally.
+     */
+    public static final Setting<TimeValue> TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER = Setting.timeSetting(
+        "tsdb_engine.search.wildcard_query.cache.expire_after",
+        TimeValue.timeValueHours(1),  // default: 1 hour
+        TimeValue.timeValueMinutes(1), // minimum: 1 minute
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Default constructor
      */
     public TSDBPlugin() {}
 
     /**
      * Initialize metrics if telemetry is available.
+     * Also initializes the wildcard query cache with cluster settings.
      */
     @Override
     public java.util.Collection<Object> createComponents(
@@ -342,6 +372,10 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         } else {
             logger.warn("MetricsRegistry is null; TSDB metrics not initialized");
         }
+
+        // Initialize wildcard query cache with cluster-level settings
+        CachedWildcardQueryBuilder.initializeCache(clusterService.getClusterSettings(), clusterService.getSettings());
+
         return Collections.emptyList();
     }
 
@@ -359,7 +393,9 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             TSDB_ENGINE_TIME_UNIT,
             TSDB_ENGINE_OOO_CUTOFF,
             TSDB_ENGINE_LABEL_STORAGE_TYPE,
-            TSDB_ENGINE_COMMIT_INTERVAL
+            TSDB_ENGINE_COMMIT_INTERVAL,
+            TSDB_ENGINE_WILDCARD_QUERY_CACHE_MAX_SIZE,
+            TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER
         );
     }
 
@@ -393,7 +429,8 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
                 TimeRangePruningQueryBuilder.NAME,
                 TimeRangePruningQueryBuilder::new,
                 TimeRangePruningQueryBuilder::fromXContent
-            )
+            ),
+            new QuerySpec<>(CachedWildcardQueryBuilder.NAME, CachedWildcardQueryBuilder::new, CachedWildcardQueryBuilder::fromXContent)
         );
     }
 
