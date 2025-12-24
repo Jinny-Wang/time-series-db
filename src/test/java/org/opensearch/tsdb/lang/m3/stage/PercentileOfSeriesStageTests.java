@@ -689,4 +689,27 @@ public class PercentileOfSeriesStageTests extends AbstractWireSerializingTestCas
         );
     }
 
+    /**
+     * Test that PercentileOfSeriesStage can be serialized to JSON (toXContent) and
+     * deserialized back (fromArgs) without losing information.
+     *
+     * <p>This stage uses array fields (percentiles) and boolean fields (interpolate),
+     * so this test ensures they are properly serialized and deserialized.</p>
+     */
+    public void testXContentDeserialization() throws java.io.IOException {
+        // Create original stage
+        List<Float> percentiles = List.of(50.0f, 95.0f, 99.0f);
+        List<String> groupByLabels = List.of("host", "region");
+        PercentileOfSeriesStage original = new PercentileOfSeriesStage(percentiles, true, groupByLabels);
+
+        // Serialize to JSON and parse back to args Map
+        java.util.Map<String, Object> args = PipelineStageTestUtils.serializeToArgs(original);
+
+        // Deserialize from args
+        PercentileOfSeriesStage deserialized = PercentileOfSeriesStage.fromArgs(args);
+
+        // Verify round-trip preserves all fields
+        assertEquals("Stage names should match", original.getName(), deserialized.getName());
+        assertEquals("Stages should be equal after round-trip", original, deserialized);
+    }
 }

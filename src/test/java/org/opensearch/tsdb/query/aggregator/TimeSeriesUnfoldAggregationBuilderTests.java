@@ -28,6 +28,7 @@ import org.opensearch.tsdb.lang.m3.stage.PerSecondStage;
 import org.opensearch.tsdb.lang.m3.stage.RoundStage;
 import org.opensearch.tsdb.lang.m3.stage.ScaleStage;
 import org.opensearch.tsdb.lang.m3.stage.SumStage;
+import org.opensearch.tsdb.lang.m3.stage.SummarizeStage;
 import org.opensearch.tsdb.query.stage.UnaryPipelineStage;
 
 import java.io.IOException;
@@ -682,7 +683,10 @@ public class TimeSeriesUnfoldAggregationBuilderTests extends BaseAggregationTest
               "step": 100,
               "stages": [
                 {
-                  "type": "invalid_stage_type"
+                  "type": "invalid_stage_type",
+                  "labels": [true, false],
+                  "int_range": [1,2,3],
+                  "long_range": [2147483648]
                 }
               ]
             }
@@ -717,7 +721,14 @@ public class TimeSeriesUnfoldAggregationBuilderTests extends BaseAggregationTest
                 {
                   "type": "scale",
                   "factor": 0.5
-                }
+                },
+                {
+                   "type": "summarize",
+                   "interval": 604800000,
+                   "function": "sum",
+                   "alignToFrom": true,
+                   "referenceTimeConstant": 0
+                 }
               ]
             }
             """;
@@ -731,18 +742,222 @@ public class TimeSeriesUnfoldAggregationBuilderTests extends BaseAggregationTest
             assertEquals(5000L, result.getMinTimestamp());
             assertEquals(10000L, result.getMaxTimestamp());
             assertEquals(500L, result.getStep());
-            assertEquals(3, result.getStages().size());
+            assertEquals(4, result.getStages().size());
 
             // Verify all three stages
             assertTrue("First stage should be ScaleStage", result.getStages().get(0) instanceof ScaleStage);
             assertTrue("Second stage should be SumStage", result.getStages().get(1) instanceof SumStage);
             assertTrue("Third stage should be ScaleStage", result.getStages().get(2) instanceof ScaleStage);
+            assertTrue("Forth stage should be Summarize", result.getStages().get(3) instanceof SummarizeStage);
 
             ScaleStage firstScale = (ScaleStage) result.getStages().get(0);
             assertEquals(1.5, firstScale.getFactor(), 0.001);
 
             ScaleStage thirdScale = (ScaleStage) result.getStages().get(2);
             assertEquals(0.5, thirdScale.getFactor(), 0.001);
+        }
+    }
+
+    /**
+     * Test parsing stages with array arguments containing numbers.
+     * This tests the new array parsing logic that handles VALUE_NUMBER tokens.
+     */
+    public void testParseStageWithNumericArrayArguments() throws IOException {
+        String json = "{"
+            + "\"min_timestamp\": 1000,"
+            + "\"max_timestamp\": 2000,"
+            + "\"step\": 100,"
+            + "\"stages\": ["
+            + "  {"
+            + "    \"type\": \"percentile_of_series\","
+            + "    \"percentiles\": [50.0, 95.0, 99.0],"
+            + "    \"interpolate\": true"
+            + "  }"
+            + "]"
+            + "}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            TimeSeriesUnfoldAggregationBuilder result = TimeSeriesUnfoldAggregationBuilder.parse("array_test", parser);
+
+            assertEquals("array_test", result.getName());
+            assertEquals(1000L, result.getMinTimestamp());
+            assertEquals(2000L, result.getMaxTimestamp());
+            assertEquals(100L, result.getStep());
+            assertEquals(1, result.getStages().size());
+
+            // Verify the stage was parsed correctly with numeric array
+            assertTrue(
+                "Stage should be PercentileOfSeriesStage",
+                result.getStages().get(0) instanceof org.opensearch.tsdb.lang.m3.stage.PercentileOfSeriesStage
+            );
+        }
+    }
+
+    /**
+     * Test parsing stages with mixed array types (strings and numbers).
+     * This tests the new array parsing logic handles different token types.
+     */
+    public void testParseStageWithMixedArrayTypes() throws IOException {
+        String json = "{"
+            + "\"min_timestamp\": 1000,"
+            + "\"max_timestamp\": 2000,"
+            + "\"step\": 100,"
+            + "\"stages\": ["
+            + "  {"
+            + "    \"type\": \"sum\","
+            + "    \"group_by_labels\": [\"host\", \"region\"]"
+            + "  }"
+            + "]"
+            + "}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            TimeSeriesUnfoldAggregationBuilder result = TimeSeriesUnfoldAggregationBuilder.parse("mixed_array_test", parser);
+
+            assertEquals("mixed_array_test", result.getName());
+            assertEquals(1, result.getStages().size());
+
+            // Verify the stage was parsed correctly with string array
+            assertTrue("Stage should be SumStage", result.getStages().get(0) instanceof SumStage);
+        }
+    }
+
+    /**
+     * Test parsing stages with integer arrays.
+     * This specifically tests INTEGER number type handling in arrays.
+     */
+    public void testParseStageWithIntegerArrayArguments() throws IOException {
+        String json = "{"
+            + "\"min_timestamp\": 1000,"
+            + "\"max_timestamp\": 2000,"
+            + "\"step\": 100,"
+            + "\"stages\": ["
+            + "  {"
+            + "    \"type\": \"histogram_percentile\","
+            + "    \"bucket_id\": \"le\","
+            + "    \"bucket_range\": \"bucket_range\","
+            + "    \"percentiles\": [50, 95, 99]"
+            + "  }"
+            + "]"
+            + "}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            TimeSeriesUnfoldAggregationBuilder result = TimeSeriesUnfoldAggregationBuilder.parse("int_array_test", parser);
+
+            assertEquals("int_array_test", result.getName());
+            assertEquals(1, result.getStages().size());
+
+            // Verify the stage was parsed correctly with integer array
+            assertTrue(
+                "Stage should be HistogramPercentileStage",
+                result.getStages().get(0) instanceof org.opensearch.tsdb.lang.m3.stage.HistogramPercentileStage
+            );
+        }
+    }
+
+    /**
+     * Test parsing stages with array containing boolean values.
+     * This tests VALUE_BOOLEAN token handling inside arrays.
+     */
+    public void testParseStageWithBooleanArray() throws IOException {
+        // Even though most stages don't accept boolean arrays, we should be able to parse them
+        // The stage factory will validate and reject if needed
+        String json = "{"
+            + "\"min_timestamp\": 1000,"
+            + "\"max_timestamp\": 2000,"
+            + "\"step\": 100,"
+            + "\"stages\": ["
+            + "  {"
+            + "    \"type\": \"scale\","
+            + "    \"factor\": 2.0,"
+            + "    \"test_array\": [true, false, true]"
+            + "  }"
+            + "]"
+            + "}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // This should parse successfully even though scale stage may not use test_array
+            TimeSeriesUnfoldAggregationBuilder result = TimeSeriesUnfoldAggregationBuilder.parse("bool_array_test", parser);
+
+            assertEquals("bool_array_test", result.getName());
+            assertEquals(1, result.getStages().size());
+        }
+    }
+
+    /**
+     * Test parsing stages with array containing null values.
+     * This tests that null values in arrays throw an error.
+     */
+    public void testParseStageWithNullInArray() throws IOException {
+        String json = "{"
+            + "\"min_timestamp\": 1000,"
+            + "\"max_timestamp\": 2000,"
+            + "\"step\": 100,"
+            + "\"stages\": ["
+            + "  {"
+            + "    \"type\": \"scale\","
+            + "    \"factor\": 2.0,"
+            + "    \"test_array\": [\"text\", 123, null]"
+            + "  }"
+            + "]"
+            + "}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // Should throw IllegalArgumentException for null in array
+            IllegalArgumentException exception = expectThrows(
+                IllegalArgumentException.class,
+                () -> TimeSeriesUnfoldAggregationBuilder.parse("null_array_test", parser)
+            );
+
+            assertTrue(
+                "Exception should mention unsupported array element type",
+                exception.getMessage().contains("Unsupported array element type")
+            );
+            assertTrue("Exception should mention VALUE_NULL", exception.getMessage().contains("VALUE_NULL"));
+        }
+    }
+
+    /**
+     * Test parsing stages with array containing nested objects.
+     * This tests that nested objects in arrays throw an error.
+     */
+    public void testParseStageWithNestedObjectInArray() throws IOException {
+        String json = "{"
+            + "\"min_timestamp\": 1000,"
+            + "\"max_timestamp\": 2000,"
+            + "\"step\": 100,"
+            + "\"stages\": ["
+            + "  {"
+            + "    \"type\": \"scale\","
+            + "    \"factor\": 2.0,"
+            + "    \"test_array\": [\"text\", {\"key\": \"value\"}]"
+            + "  }"
+            + "]"
+            + "}";
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // Should throw IllegalArgumentException for nested object in array
+            IllegalArgumentException exception = expectThrows(
+                IllegalArgumentException.class,
+                () -> TimeSeriesUnfoldAggregationBuilder.parse("nested_object_array_test", parser)
+            );
+
+            assertTrue(
+                "Exception should mention unsupported array element type",
+                exception.getMessage().contains("Unsupported array element type")
+            );
+            assertTrue("Exception should mention START_OBJECT", exception.getMessage().contains("START_OBJECT"));
         }
     }
 

@@ -371,4 +371,26 @@ public class TransformNullStageTests extends AbstractWireSerializingTestCase<Tra
         TransformNullStage stage = new TransformNullStage(0.0);
         assertNullInputThrowsException(stage, "transform_null");
     }
+
+    /**
+     * Test that TransformNullStage can be serialized to JSON (toXContent) and
+     * deserialized back (fromArgs) without losing information.
+     *
+     * <p>This ensures round-trip serialization works correctly and that Number
+     * type conversions (Integer/Long/Double) are handled properly.</p>
+     */
+    public void testXContentDeserialization() throws IOException {
+        // Create original stage with custom fill value
+        TransformNullStage original = new TransformNullStage(3.14);
+
+        // Serialize to JSON and parse back to args Map
+        Map<String, Object> args = PipelineStageTestUtils.serializeToArgs(original);
+
+        // Deserialize from args
+        TransformNullStage deserialized = TransformNullStage.fromArgs(args);
+
+        // Verify round-trip preserves all fields
+        assertEquals("Stage names should match", original.getName(), deserialized.getName());
+        assertEquals("Stages should be equal after round-trip", original, deserialized);
+    }
 }

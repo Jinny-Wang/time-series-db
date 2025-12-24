@@ -175,10 +175,16 @@ public class FallbackSeriesUnaryStage implements UnaryPipelineStage {
             throw new IllegalArgumentException("FallbackSeriesUnaryStage requires arguments");
         }
 
-        Double fallbackValue = (Double) args.get("fallbackValue");
-        Long minTimestamp = (Long) args.get("minTimestamp");
-        Long maxTimestamp = (Long) args.get("maxTimestamp");
-        Long step = (Long) args.get("step");
+        // Extract arguments, handling different Number types (Integer, Long, Double)
+        Object fallbackValueObj = args.get("fallbackValue");
+        Object minTimestampObj = args.get("minTimestamp");
+        Object maxTimestampObj = args.get("maxTimestamp");
+        Object stepObj = args.get("step");
+
+        Double fallbackValue = fallbackValueObj instanceof Number ? ((Number) fallbackValueObj).doubleValue() : null;
+        Long minTimestamp = minTimestampObj instanceof Number ? ((Number) minTimestampObj).longValue() : null;
+        Long maxTimestamp = maxTimestampObj instanceof Number ? ((Number) maxTimestampObj).longValue() : null;
+        Long step = stepObj instanceof Number ? ((Number) stepObj).longValue() : null;
 
         if (fallbackValue == null || minTimestamp == null || maxTimestamp == null || step == null) {
             throw new IllegalArgumentException(

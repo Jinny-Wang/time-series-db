@@ -162,7 +162,7 @@ public class UnaryFallbackSeriesStageTests extends AbstractWireSerializingTestCa
      * Test fromArgs with valid arguments.
      */
     public void testFromArgs() {
-        Map<String, Object> args = Map.of("fallbackValue", 3.0, "minTimestamp", 0L, "maxTimestamp", 30L, "step", 15L);
+        Map<String, Object> args = Map.of("fallbackValue", 3.0, "minTimestamp", 0, "maxTimestamp", 30, "step", 15);
 
         FallbackSeriesUnaryStage stage = FallbackSeriesUnaryStage.fromArgs(args);
 
@@ -179,16 +179,131 @@ public class UnaryFallbackSeriesStageTests extends AbstractWireSerializingTestCa
     }
 
     /**
+     * Test that FallbackSeriesUnaryStage can be serialized to JSON (toXContent) and
+     * deserialized back (fromArgs) without losing information.
+     *
+     * <p>This test is critical because FallbackSeriesUnaryStage had a bug where it used
+     * direct (Long) casts which failed when JSON parsing returned Integer values.</p>
+     */
+    public void testXContentDeserialization() throws IOException {
+        // Create original stage with various numeric types
+        FallbackSeriesUnaryStage original = new FallbackSeriesUnaryStage(1.5, 1000000000L, 2000000000L, 60000L);
+
+        // Serialize to JSON and parse back to args Map
+        Map<String, Object> args = PipelineStageTestUtils.serializeToArgs(original);
+
+        // Deserialize from args
+        FallbackSeriesUnaryStage deserialized = FallbackSeriesUnaryStage.fromArgs(args);
+
+        // Verify round-trip preserves all fields
+        assertEquals("Stage names should match", original.getName(), deserialized.getName());
+        assertEquals("Stages should be equal after round-trip", original, deserialized);
+    }
+
+    /**
+     * Test that fromArgs correctly handles both Integer and Long types from JSON parsing.
+     * This verifies the fix for the Number type casting bug.
+     */
+    public void testFromArgsHandlesIntegerAndLong() {
+        // Simulate JSON parser returning Integer for values that fit in int range
+        Map<String, Object> argsWithInteger = Map.of(
+            "fallbackValue",
+            1.5,
+            "minTimestamp",
+            1000, // Integer (fits in int)
+            "maxTimestamp",
+            2000, // Integer (fits in int)
+            "step",
+            60 // Integer (fits in int)
+        );
+
+        FallbackSeriesUnaryStage stageFromInteger = FallbackSeriesUnaryStage.fromArgs(argsWithInteger);
+        assertNotNull("Should handle Integer types", stageFromInteger);
+
+        // Simulate JSON parser returning Long for large values
+        Map<String, Object> argsWithLong = Map.of(
+            "fallbackValue",
+            1.5,
+            "minTimestamp",
+            1000000000L, // Long
+            "maxTimestamp",
+            2000000000L, // Long
+            "step",
+            60000L // Long
+        );
+
+        FallbackSeriesUnaryStage stageFromLong = FallbackSeriesUnaryStage.fromArgs(argsWithLong);
+        assertNotNull("Should handle Long types", stageFromLong);
+    }
+
+    /**
      * Test fromArgs rejects missing arguments.
+     * Tests each missing field individually to cover all null check branches.
      */
     public void testFromArgsMissingArguments() {
-        Map<String, Object> incompleteArgs = Map.of("fallbackValue", 1.0);
+        // Missing fallbackValue
+        Map<String, Object> missingFallbackValue = Map.of("minTimestamp", 1000L, "maxTimestamp", 2000L, "step", 60L);
+        IllegalArgumentException exception1 = expectThrows(
+            IllegalArgumentException.class,
+            () -> FallbackSeriesUnaryStage.fromArgs(missingFallbackValue)
+        );
+        assertTrue(exception1.getMessage().contains("requires fallbackValue, minTimestamp, maxTimestamp, and step"));
 
+        // Missing minTimestamp
+        Map<String, Object> missingMinTimestamp = Map.of("fallbackValue", 1.0, "maxTimestamp", 2000L, "step", 60L);
+        IllegalArgumentException exception2 = expectThrows(
+            IllegalArgumentException.class,
+            () -> FallbackSeriesUnaryStage.fromArgs(missingMinTimestamp)
+        );
+        assertTrue(exception2.getMessage().contains("requires fallbackValue, minTimestamp, maxTimestamp, and step"));
+
+        // Missing maxTimestamp
+        Map<String, Object> missingMaxTimestamp = Map.of("fallbackValue", 1.0, "minTimestamp", 1000L, "step", 60L);
+        IllegalArgumentException exception3 = expectThrows(
+            IllegalArgumentException.class,
+            () -> FallbackSeriesUnaryStage.fromArgs(missingMaxTimestamp)
+        );
+        assertTrue(exception3.getMessage().contains("requires fallbackValue, minTimestamp, maxTimestamp, and step"));
+
+        // Missing step
+        Map<String, Object> missingStep = Map.of("fallbackValue", 1.0, "minTimestamp", 1000L, "maxTimestamp", 2000L);
+        IllegalArgumentException exception4 = expectThrows(
+            IllegalArgumentException.class,
+            () -> FallbackSeriesUnaryStage.fromArgs(missingStep)
+        );
+        assertTrue(exception4.getMessage().contains("requires fallbackValue, minTimestamp, maxTimestamp, and step"));
+    }
+
+    /**
+     * Test fromArgs rejects null arguments map.
+     * This covers the null check branch (line 174).
+     */
+    public void testFromArgsNullArguments() {
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, () -> FallbackSeriesUnaryStage.fromArgs(null));
+        assertEquals("FallbackSeriesUnaryStage requires arguments", exception.getMessage());
+    }
+
+    /**
+     * Test fromArgs handles invalid field types gracefully.
+     * This covers the instanceof Number false branch (line 184).
+     */
+    public void testFromArgsInvalidFieldTypes() {
+        // Test with non-Number fallbackValue
+        Map<String, Object> invalidFallbackValue = Map.of(
+            "fallbackValue",
+            "not a number",
+            "minTimestamp",
+            1000L,
+            "maxTimestamp",
+            2000L,
+            "step",
+            60L
+        );
         IllegalArgumentException exception = expectThrows(
             IllegalArgumentException.class,
-            () -> FallbackSeriesUnaryStage.fromArgs(incompleteArgs)
+            () -> FallbackSeriesUnaryStage.fromArgs(invalidFallbackValue)
         );
-        assertTrue(exception.getMessage().contains("requires fallbackValue, minTimestamp, maxTimestamp, and step"));
+        assertTrue(exception.getMessage().contains("requires"));
     }
 
     /**

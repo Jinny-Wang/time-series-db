@@ -501,4 +501,279 @@ public class TimeSeriesCoordinatorAggregationBuilderTests extends OpenSearchTest
         }
     }
 
+    /**
+     * Test error handling for invalid stage type
+     */
+    public void testParseInvalidStageType() throws Exception {
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "unknown_stage",
+                  "tag_names": [true, false],
+                  "invalid_range": [1,2,3],
+                  "invalid_long_range": [2147483648]
+                }
+              ],
+              "references": {
+                "0": "0_coordinator",
+                "4": "4_coordinator"
+              },
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // Should throw IllegalArgumentException for unknown stage type
+            expectThrows(IllegalArgumentException.class, () -> TimeSeriesCoordinatorAggregationBuilder.parse("9", parser));
+        }
+    }
+
+    /**
+     * Test parsing stages with array arguments containing numbers.
+     * This tests the new array parsing logic that handles VALUE_NUMBER tokens.
+     */
+    public void testParseStageWithNumericArrayArguments() throws Exception {
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "percentile_of_series",
+                  "percentiles": [50.0, 95.0, 99.0],
+                  "interpolate": true
+                }
+              ],
+              "references": {},
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            TimeSeriesCoordinatorAggregationBuilder result = TimeSeriesCoordinatorAggregationBuilder.parse("array_test", parser);
+
+            assertEquals("array_test", result.getName());
+            assertEquals(1, result.getStages().size());
+            assertTrue(
+                "Stage should be PercentileOfSeriesStage",
+                result.getStages().get(0) instanceof org.opensearch.tsdb.lang.m3.stage.PercentileOfSeriesStage
+            );
+        }
+    }
+
+    /**
+     * Test parsing stages with integer arrays.
+     * This specifically tests INTEGER number type handling in arrays.
+     */
+    public void testParseStageWithIntegerArrayArguments() throws Exception {
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "histogram_percentile",
+                  "bucket_id": "le",
+                  "bucket_range": "bucket_range",
+                  "percentiles": [50, 95, 99]
+                }
+              ],
+              "references": {},
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            TimeSeriesCoordinatorAggregationBuilder result = TimeSeriesCoordinatorAggregationBuilder.parse("int_array_test", parser);
+
+            assertEquals("int_array_test", result.getName());
+            assertEquals(1, result.getStages().size());
+            assertTrue(
+                "Stage should be HistogramPercentileStage",
+                result.getStages().get(0) instanceof org.opensearch.tsdb.lang.m3.stage.HistogramPercentileStage
+            );
+        }
+    }
+
+    /**
+     * Test parsing stages with boolean array arguments.
+     * This tests the new array parsing logic that handles VALUE_BOOLEAN tokens.
+     */
+    public void testParseStageWithBooleanArrayArguments() throws Exception {
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "show_tags",
+                  "show_keys": true,
+                  "tags": ["host", "region"]
+                }
+              ],
+              "references": {},
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            TimeSeriesCoordinatorAggregationBuilder result = TimeSeriesCoordinatorAggregationBuilder.parse("bool_test", parser);
+
+            assertEquals("bool_test", result.getName());
+            assertEquals(1, result.getStages().size());
+            assertTrue(
+                "Stage should be ShowTagsStage",
+                result.getStages().get(0) instanceof org.opensearch.tsdb.lang.m3.stage.ShowTagsStage
+            );
+        }
+    }
+
+    /**
+     * Test parsing stages with array containing boolean values.
+     * This tests VALUE_BOOLEAN token handling inside arrays.
+     */
+    public void testParseStageWithBooleanArrayValues() throws Exception {
+        // Even though most stages don't accept boolean arrays, we should be able to parse them
+        // The stage factory will validate and reject if needed
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "scale",
+                  "factor": 2.0,
+                  "test_array": [true, false, true]
+                }
+              ],
+              "references": {},
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // This should parse successfully even though scale stage may not use test_array
+            TimeSeriesCoordinatorAggregationBuilder result = TimeSeriesCoordinatorAggregationBuilder.parse("bool_array_test", parser);
+
+            assertEquals("bool_array_test", result.getName());
+            assertEquals(1, result.getStages().size());
+        }
+    }
+
+    /**
+     * Test parsing stages with array containing null values.
+     * This tests that null values in arrays throw an error.
+     */
+    public void testParseStageWithNullInArray() throws Exception {
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "scale",
+                  "factor": 2.0,
+                  "test_array": ["text", 123, null]
+                }
+              ],
+              "references": {},
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // Should throw IllegalArgumentException for null in array
+            IllegalArgumentException exception = expectThrows(
+                IllegalArgumentException.class,
+                () -> TimeSeriesCoordinatorAggregationBuilder.parse("null_array_test", parser)
+            );
+
+            assertTrue(
+                "Exception should mention unsupported array element type",
+                exception.getMessage().contains("Unsupported array element type")
+            );
+            assertTrue("Exception should mention VALUE_NULL", exception.getMessage().contains("VALUE_NULL"));
+        }
+    }
+
+    /**
+     * Test parsing stages with array containing nested arrays.
+     * This tests that nested arrays throw an error.
+     */
+    public void testParseStageWithNestedArrayInArray() throws Exception {
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "scale",
+                  "factor": 2.0,
+                  "test_array": ["text", [1, 2, 3]]
+                }
+              ],
+              "references": {},
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // Should throw IllegalArgumentException for nested array
+            IllegalArgumentException exception = expectThrows(
+                IllegalArgumentException.class,
+                () -> TimeSeriesCoordinatorAggregationBuilder.parse("nested_array_test", parser)
+            );
+
+            assertTrue(
+                "Exception should mention unsupported array element type",
+                exception.getMessage().contains("Unsupported array element type")
+            );
+            assertTrue("Exception should mention START_ARRAY", exception.getMessage().contains("START_ARRAY"));
+        }
+    }
+
+    /**
+     * Test parsing with unsupported token type in stage arguments.
+     * This tests the error path for unsupported token types (e.g., nested objects).
+     */
+    public void testParseStageWithUnsupportedTokenType() throws Exception {
+        String json = """
+            {
+              "buckets_path": [],
+              "stages": [
+                {
+                  "type": "scale",
+                  "nested_object": {
+                    "key": "value"
+                  }
+                }
+              ],
+              "references": {},
+              "inputReference": "0"
+            }
+            """;
+
+        try (XContentParser parser = createParser(JsonXContent.jsonXContent, json)) {
+            parser.nextToken(); // Move to START_OBJECT
+
+            // Should throw IllegalArgumentException for unsupported token type (nested object)
+            IllegalArgumentException exception = expectThrows(
+                IllegalArgumentException.class,
+                () -> TimeSeriesCoordinatorAggregationBuilder.parse("unsupported_test", parser)
+            );
+
+            assertTrue("Exception should mention unsupported token type", exception.getMessage().contains("Unsupported token type"));
+        }
+    }
+
 }

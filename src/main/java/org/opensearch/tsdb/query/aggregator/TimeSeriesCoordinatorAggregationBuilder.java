@@ -344,10 +344,39 @@ public class TimeSeriesCoordinatorAggregationBuilder extends AbstractPipelineAgg
                                             stageArgs.put(fieldName, parser.doubleValue());
                                         }
                                     } else if (token == XContentParser.Token.START_ARRAY) {
-                                        List<String> arrayValues = new ArrayList<>();
+                                        List<Object> arrayValues = new ArrayList<>();
                                         while ((token = parser.nextToken()) != XContentParser.Token.END_ARRAY) {
                                             if (token == XContentParser.Token.VALUE_STRING) {
                                                 arrayValues.add(parser.text());
+                                            } else if (token == XContentParser.Token.VALUE_NUMBER) {
+                                                switch (parser.numberType()) {
+                                                    case INT:
+                                                        arrayValues.add(parser.intValue());
+                                                        break;
+                                                    case LONG:
+                                                        arrayValues.add(parser.longValue());
+                                                        break;
+                                                    case DOUBLE:
+                                                    case FLOAT:
+                                                        arrayValues.add(parser.doubleValue());
+                                                        break;
+                                                    default:
+                                                        arrayValues.add(parser.doubleValue());
+                                                }
+                                            } else if (token == XContentParser.Token.VALUE_BOOLEAN) {
+                                                arrayValues.add(parser.booleanValue());
+                                            } else {
+                                                throw new IllegalArgumentException(
+                                                    "Unsupported array element type in stage argument '"
+                                                        + fieldName
+                                                        + "': "
+                                                        + token
+                                                        + ". Aggregation: "
+                                                        + aggregationName
+                                                        + ", Stage type: "
+                                                        + (stageType != null ? stageType : "unknown")
+                                                        + ". Supported array element types: string, number, boolean."
+                                                );
                                             }
                                         }
                                         stageArgs.put(fieldName, arrayValues);
