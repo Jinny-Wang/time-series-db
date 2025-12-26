@@ -190,6 +190,18 @@ public class TSDBEngine extends Engine {
 
             this.localCheckpointTracker = createLocalCheckpointTracker();
             String translogUUID = Objects.requireNonNull(lastCommittedSegmentInfos.getUserData().get(Translog.TRANSLOG_UUID_KEY));
+            TranslogEventListener internalTranslogEventListener = new TranslogEventListener() {
+                @Override
+                public void onAfterTranslogRecovery() {
+                    TSDBEngine.this.flush(false, true);
+                    TSDBEngine.this.translogManager.trimUnreferencedTranslogFiles();
+                }
+
+                @Override
+                public void onFailure(String reason, Exception ex) {
+                    TSDBEngine.this.failEngine(reason, ex);
+                }
+            };
             this.translogManager = new InternalTranslogManager(
                 engineConfig.getTranslogConfig(),
                 engineConfig.getPrimaryTermSupplier(),
@@ -199,7 +211,7 @@ public class TSDBEngine extends Engine {
                 readLock,
                 this::getLocalCheckpointTracker,
                 translogUUID,
-                TranslogEventListener.NOOP_TRANSLOG_EVENT_LISTENER,
+                internalTranslogEventListener,
                 this::ensureOpen,
                 engineConfig.getTranslogFactory(),
                 engineConfig.getStartedPrimarySupplier(),
@@ -385,6 +397,10 @@ public class TSDBEngine extends Engine {
         IndexOperationContext context
     ) {
         try {
+            if (indexOp.origin().isFromTranslog()) {
+                localCheckpointTracker.markSeqNoAsPersisted(indexOp.seqNo());
+                return;
+            }
             rewriteParsedDocumentSource(indexOp, seriesReference, metricDocument, context.isNewSeriesCreated);
             context.translogLocation = translogManager.add(
                 new Translog.Index(indexOp, new IndexResult(indexOp.version(), indexOp.primaryTerm(), indexOp.seqNo(), true))
@@ -1282,11 +1298,6 @@ public class TSDBEngine extends Engine {
      */
     private void rewriteParsedDocumentSource(Index index, long seriesRef, TSDBDocument metricDocument, boolean isNewSeriesCreated)
         throws IOException {
-        if (index.origin().isFromTranslog()) {
-            // skip rewriting source for translog replays
-            return;
-        }
-
         // If no series were created, then rewrite the source without labels and with the seriesRef.
         // If series was created, update the source to include the seriesRef so replay is deterministic.
         try (XContentBuilder builder = SmileXContent.contentBuilder()) {
