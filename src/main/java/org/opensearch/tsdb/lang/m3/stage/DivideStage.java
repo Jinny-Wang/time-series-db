@@ -88,6 +88,11 @@ public class DivideStage extends AbstractBinaryProjectionStage {
     }
 
     @Override
+    protected boolean shouldExtractCommonTagKeys() {
+        return true;
+    }
+
+    @Override
     protected TimeSeries mergeMatchingSeries(List<TimeSeries> rightTimeSeries) {
         // Divide expects only one time series for matched group
         if (rightTimeSeries.isEmpty()) {

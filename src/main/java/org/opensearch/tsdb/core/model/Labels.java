@@ -8,6 +8,8 @@
 package org.opensearch.tsdb.core.model;
 
 import org.apache.lucene.util.BytesRef;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -90,4 +92,57 @@ public interface Labels {
      * @throws IllegalArgumentException if any label name is null or empty
      */
     Labels withLabels(Map<String, String> newLabels);
+
+    /**
+     * Extract sorted names (label names) from this Labels instance.
+     * Returns a list of all label names sorted by name.
+     *
+     * @return a list of sorted label names
+     */
+    List<String> extractSortedNames();
+
+    /**
+     * Find common names between this Labels instance and a sorted list of label names.
+     * Returns names that are present in both this Labels instance and the sorted list.
+     *
+     * @param sortedNames a sorted list of label names to compare with
+     * @return a list of common names, sorted by name
+     */
+    List<String> findCommonNamesWithSortedList(List<String> sortedNames);
+
+    /**
+     * Find the common label names across a list of Labels instances.
+     * Returns label names that are present in all Labels instances in the list.
+     *
+     * @param labelsList the list of Labels instances to find common label names from
+     * @return a list of common label names present in all Labels instances, sorted by name.
+     *         Returns empty list if the input list is null, empty, or contains null/empty Labels instances.
+     */
+    static List<String> findCommonLabelNames(List<Labels> labelsList) {
+        if (labelsList == null || labelsList.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // If any Labels is null or empty, return empty list
+        for (Labels labels : labelsList) {
+            if (labels == null || labels.isEmpty()) {
+                return new ArrayList<>();
+            }
+        }
+
+        // If only one label, return all its names
+        if (labelsList.size() == 1) {
+            return labelsList.get(0).extractSortedNames();
+        }
+
+        // Start with names from the first Labels instance
+        List<String> commonNames = labelsList.get(0).extractSortedNames();
+
+        // Intersect with remaining Labels instances
+        for (int i = 1; i < labelsList.size() && !commonNames.isEmpty(); i++) {
+            commonNames = labelsList.get(i).findCommonNamesWithSortedList(commonNames);
+        }
+
+        return commonNames;
+    }
 }

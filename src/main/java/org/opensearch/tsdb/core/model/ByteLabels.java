@@ -13,6 +13,7 @@ import org.opensearch.common.hash.MurmurHash3;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -723,4 +724,76 @@ public class ByteLabels implements Labels {
     public String toString() {
         return toKeyValueString();
     }
+
+    /**
+     * Extract sorted names (label names) from this ByteLabels instance.
+     * Since ByteLabels are stored in sorted order, this efficiently scans the byte array.
+     * Overrides the default implementation to avoid map conversion.
+     *
+     * @return a list of sorted label names
+     */
+    @Override
+    public List<String> extractSortedNames() {
+        List<String> names = new ArrayList<>();
+        int pos = 0;
+
+        while (pos < data.length) {
+            StringPosition namePos = parseStringPos(data, pos);
+            StringPosition valuePos = parseStringPos(data, namePos.nextPos());
+            pos = valuePos.nextPos();
+
+            String name = new String(data, namePos.dataStart(), namePos.length(), StandardCharsets.UTF_8);
+            names.add(name);
+        }
+
+        return names;
+    }
+
+    /**
+     * Find common names between this ByteLabels instance and a sorted list of label names.
+     * Leverages the sorted nature of both ByteLabels and the input list for efficient comparison.
+     * Overrides the default implementation to avoid map conversion and use efficient byte array scanning.
+     *
+     * @param sortedNames a sorted list of label names to compare with
+     * @return a list of common names, sorted by name
+     */
+    @Override
+    public List<String> findCommonNamesWithSortedList(List<String> sortedNames) {
+        if (sortedNames.isEmpty() || this.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<String> commonNames = new ArrayList<>();
+        int sortedNamesIndex = 0;
+        int pos = 0;
+
+        // Two-pointer merge-like algorithm since both are sorted
+        while (pos < data.length && sortedNamesIndex < sortedNames.size()) {
+            StringPosition namePos = parseStringPos(data, pos);
+            StringPosition valuePos = parseStringPos(data, namePos.nextPos());
+            int nextPos = valuePos.nextPos();
+
+            String currentName = sortedNames.get(sortedNamesIndex);
+            byte[] currentNameBytes = currentName.getBytes(StandardCharsets.UTF_8);
+
+            // Compare names byte-by-byte
+            int cmp = compareBytes(data, namePos.dataStart(), namePos.length(), currentNameBytes);
+
+            if (cmp == 0) {
+                // Names match - add to common names
+                commonNames.add(currentName);
+                pos = nextPos;
+                sortedNamesIndex++;
+            } else if (cmp < 0) {
+                // ByteLabels name is smaller - advance ByteLabels position
+                pos = nextPos;
+            } else {
+                // Sorted list name is smaller - advance sorted list index
+                sortedNamesIndex++;
+            }
+        }
+
+        return commonNames;
+    }
+
 }

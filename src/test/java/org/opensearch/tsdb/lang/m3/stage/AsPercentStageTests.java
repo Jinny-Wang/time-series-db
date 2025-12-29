@@ -20,6 +20,9 @@ import org.opensearch.tsdb.core.model.FloatSample;
 import org.opensearch.tsdb.core.model.Sample;
 import org.opensearch.tsdb.query.aggregator.TimeSeries;
 
+import static org.opensearch.tsdb.TestUtils.assertSamplesEqual;
+import static org.opensearch.tsdb.TestUtils.findSeriesByLabel;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -506,5 +509,63 @@ public class AsPercentStageTests extends AbstractWireSerializingTestCase<AsPerce
             new TimeSeries(List.of(new FloatSample(1000L, 10.0)), ByteLabels.emptyLabels(), 1000L, 1000L, 1000L, null)
         );
         TestUtils.assertBinaryNullInputsThrowExceptions(stage, nonNullInput, "as_percent");
+    }
+
+    public void testCommonTagKeyExtraction() {
+        // Test that common tag keys are extracted when no label keys are specified
+        // Left inputs: 2 time series with multiple tags, including cluster:clusterA and cluster:clusterB
+        // Right inputs: 2 series with only cluster tag
+        AsPercentStage stage = new AsPercentStage("right_series");
+
+        // Left series 1: cluster=clusterA, service=api, instance=server1
+        List<Sample> leftSamples1 = Arrays.asList(new FloatSample(1000L, 20.0), new FloatSample(2000L, 40.0));
+        ByteLabels leftLabels1 = ByteLabels.fromMap(Map.of("cluster", "clusterA", "service", "api", "instance", "server1"));
+        TimeSeries leftSeries1 = new TimeSeries(leftSamples1, leftLabels1, 1000L, 2000L, 1000L, "left-series-1");
+
+        // Left series 2: cluster=clusterB, service=api, instance=server2
+        List<Sample> leftSamples2 = Arrays.asList(new FloatSample(1000L, 30.0), new FloatSample(2000L, 60.0));
+        ByteLabels leftLabels2 = ByteLabels.fromMap(Map.of("cluster", "clusterB", "service", "api", "instance", "server2"));
+        TimeSeries leftSeries2 = new TimeSeries(leftSamples2, leftLabels2, 1000L, 2000L, 1000L, "left-series-2");
+
+        // Right series 1: cluster=clusterA (only cluster tag)
+        List<Sample> rightSamples1 = Arrays.asList(new FloatSample(1000L, 100.0), new FloatSample(2000L, 200.0));
+        ByteLabels rightLabels1 = ByteLabels.fromMap(Map.of("cluster", "clusterA"));
+        TimeSeries rightSeries1 = new TimeSeries(rightSamples1, rightLabels1, 1000L, 2000L, 1000L, "right-series-1");
+
+        // Right series 2: cluster=clusterB (only cluster tag)
+        List<Sample> rightSamples2 = Arrays.asList(new FloatSample(1000L, 150.0), new FloatSample(2000L, 300.0));
+        ByteLabels rightLabels2 = ByteLabels.fromMap(Map.of("cluster", "clusterB"));
+        TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 2000L, 1000L, "right-series-2");
+
+        List<TimeSeries> left = Arrays.asList(leftSeries1, leftSeries2);
+        List<TimeSeries> right = Arrays.asList(rightSeries1, rightSeries2);
+        List<TimeSeries> result = stage.process(left, right);
+
+        // Should match leftSeries1 with rightSeries1 (clusterA) and leftSeries2 with rightSeries2 (clusterB)
+        assertEquals(2, result.size());
+
+        // Verify result for clusterA
+        TimeSeries resultClusterA = findSeriesByLabel(result, "cluster", "clusterA");
+        List<Sample> expectedSamplesA = Arrays.asList(
+            new FloatSample(1000L, 20.0),  // 20.0/100.0 * 100 = 20.0%
+            new FloatSample(2000L, 20.0)   // 40.0/200.0 * 100 = 20.0%
+        );
+        assertSamplesEqual("ClusterA samples", expectedSamplesA, resultClusterA.getSamples(), 0.001);
+        assertEquals("ratios", resultClusterA.getLabels().get("type"));
+        assertEquals("clusterA", resultClusterA.getLabels().get("cluster"));
+        assertEquals("api", resultClusterA.getLabels().get("service"));
+        assertEquals("server1", resultClusterA.getLabels().get("instance"));
+
+        // Verify result for clusterB
+        TimeSeries resultClusterB = findSeriesByLabel(result, "cluster", "clusterB");
+        List<Sample> expectedSamplesB = Arrays.asList(
+            new FloatSample(1000L, 20.0),  // 30.0/150.0 * 100 = 20.0%
+            new FloatSample(2000L, 20.0)   // 60.0/300.0 * 100 = 20.0%
+        );
+        assertSamplesEqual("ClusterB samples", expectedSamplesB, resultClusterB.getSamples(), 0.001);
+        assertEquals("ratios", resultClusterB.getLabels().get("type"));
+        assertEquals("clusterB", resultClusterB.getLabels().get("cluster"));
+        assertEquals("api", resultClusterB.getLabels().get("service"));
+        assertEquals("server2", resultClusterB.getLabels().get("instance"));
     }
 }

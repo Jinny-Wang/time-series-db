@@ -10,6 +10,7 @@ package org.opensearch.tsdb.core.model;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -529,5 +530,154 @@ public class ByteLabelsTests extends OpenSearchTestCase {
 
         // Verify sorted order includes percentile in correct position
         assertTrue(withP95.toKeyValueString().contains("percentile:p95"));
+    }
+
+    public void testGetCommonTagKeys() {
+        ByteLabels labels1 = ByteLabels.fromStrings("a", "1", "b", "2", "c", "3");
+        ByteLabels labels2 = ByteLabels.fromStrings("b", "2", "c", "3", "d", "4");
+
+        List<String> commonKeys = Labels.findCommonLabelNames(List.of(labels1, labels2));
+        assertEquals(2, commonKeys.size());
+        assertEquals("b", commonKeys.get(0));
+        assertEquals("c", commonKeys.get(1));
+    }
+
+    public void testGetCommonTagKeysAllCommon() {
+        ByteLabels labels1 = ByteLabels.fromStrings("a", "1", "b", "2", "c", "3");
+        ByteLabels labels2 = ByteLabels.fromStrings("a", "10", "b", "20", "c", "30");
+
+        List<String> commonKeys = Labels.findCommonLabelNames(List.of(labels1, labels2));
+        assertEquals(3, commonKeys.size());
+        assertEquals("a", commonKeys.get(0));
+        assertEquals("b", commonKeys.get(1));
+        assertEquals("c", commonKeys.get(2));
+    }
+
+    public void testGetCommonTagKeysEmptyLabels() {
+        ByteLabels labels1 = ByteLabels.emptyLabels();
+        ByteLabels labels2 = ByteLabels.fromStrings("a", "1", "b", "2");
+
+        List<String> commonKeys = Labels.findCommonLabelNames(List.of(labels1, labels2));
+        assertTrue(commonKeys.isEmpty());
+
+        commonKeys = Labels.findCommonLabelNames(List.of(labels2, labels1));
+        assertTrue(commonKeys.isEmpty());
+    }
+
+    public void testGetCommonTagKeysEarlyTermination() {
+        // Test case where commonKeys becomes empty during iteration (early termination)
+        ByteLabels labels1 = ByteLabels.fromStrings("a", "1", "b", "2", "c", "3");
+        ByteLabels labels2 = ByteLabels.fromStrings("d", "4", "e", "5", "f", "6");
+        ByteLabels labels3 = ByteLabels.fromStrings("g", "7", "h", "8");
+
+        // labels1 and labels2 have no common keys, so result should be empty
+        // This tests the early termination when commonKeys becomes empty
+        List<String> commonKeys = Labels.findCommonLabelNames(List.of(labels1, labels2, labels3));
+        assertTrue(commonKeys.isEmpty());
+    }
+
+    public void testGetCommonTagKeysWithNull() {
+        ByteLabels labels1 = ByteLabels.fromStrings("a", "1", "b", "2");
+        ByteLabels labels2 = ByteLabels.fromStrings("a", "10", "b", "20");
+
+        // Null in the list should return empty
+        List<Labels> listWithNull = new ArrayList<>();
+        listWithNull.add(labels1);
+        listWithNull.add(null);
+        listWithNull.add(labels2);
+        List<String> commonKeys = Labels.findCommonLabelNames(listWithNull);
+        assertTrue(commonKeys.isEmpty());
+    }
+
+    public void testGetCommonTagKeysNullList() {
+        List<String> commonKeys = Labels.findCommonLabelNames(null);
+        assertTrue(commonKeys.isEmpty());
+    }
+
+    public void testGetCommonTagKeysEmptyList() {
+        List<String> commonKeys = Labels.findCommonLabelNames(List.of());
+        assertTrue(commonKeys.isEmpty());
+    }
+
+    public void testFindCommonKeysWithSortedListEmptySortedKeys() {
+        // Empty sortedKeys should return empty list
+        ByteLabels labels = ByteLabels.fromStrings("a", "1", "b", "2", "c", "3");
+        List<String> emptySortedKeys = List.of();
+
+        List<String> result = labels.findCommonNamesWithSortedList(emptySortedKeys);
+        assertTrue("Empty sortedKeys should return empty list", result.isEmpty());
+    }
+
+    public void testFindCommonKeysWithSortedListEmptyByteLabels() {
+        // Empty ByteLabels should return empty list
+        ByteLabels emptyLabels = ByteLabels.emptyLabels();
+        List<String> sortedKeys = List.of("a", "b", "c");
+
+        List<String> result = emptyLabels.findCommonNamesWithSortedList(sortedKeys);
+        assertTrue("Empty ByteLabels should return empty list", result.isEmpty());
+    }
+
+    public void testFindCommonKeysWithSortedListByteLabelsKeySmaller() {
+        // ByteLabels key is smaller (cmp < 0) - should advance ByteLabels position
+        // ByteLabels has keys: a, c, e
+        // Sorted list has keys: b, c, d
+        // When comparing a < b, should advance ByteLabels position
+        ByteLabels labels = ByteLabels.fromStrings("a", "1", "c", "3", "e", "5");
+        List<String> sortedKeys = List.of("b", "c", "d");
+
+        List<String> result = labels.findCommonNamesWithSortedList(sortedKeys);
+        assertEquals(1, result.size());
+        assertEquals("c", result.get(0));
+    }
+
+    public void testFindCommonKeysWithSortedListSortedKeySmaller() {
+        // Sorted list key is smaller (cmp > 0) - should advance sorted list index
+        // ByteLabels has keys: c, e, g
+        // Sorted list has keys: a, b, c, d
+        // When comparing c > a, should advance sorted list index
+        ByteLabels labels = ByteLabels.fromStrings("c", "3", "e", "5", "g", "7");
+        List<String> sortedKeys = List.of("a", "b", "c", "d");
+
+        List<String> result = labels.findCommonNamesWithSortedList(sortedKeys);
+        assertEquals(1, result.size());
+        assertEquals("c", result.get(0));
+    }
+
+    public void testFindCommonKeysWithSortedListAlternatingComparison() {
+        // Test both comparison branches in sequence
+        // ByteLabels: a, c, e, g
+        // Sorted list: b, c, f, g
+        // Sequence: a < b (advance ByteLabels), c == c (match), e < f (advance ByteLabels), g == g (match)
+        ByteLabels labels = ByteLabels.fromStrings("a", "1", "c", "3", "e", "5", "g", "7");
+        List<String> sortedKeys = List.of("b", "c", "f", "g");
+
+        List<String> result = labels.findCommonNamesWithSortedList(sortedKeys);
+        assertEquals(2, result.size());
+        assertEquals("c", result.get(0));
+        assertEquals("g", result.get(1));
+    }
+
+    public void testFindCommonKeysWithSortedListNoMatches() {
+        // Test case where ByteLabels keys are all smaller than sorted list keys
+        // ByteLabels: a, b, c
+        // Sorted list: d, e, f
+        // All comparisons will be cmp < 0, advancing ByteLabels position
+        ByteLabels labels = ByteLabels.fromStrings("a", "1", "b", "2", "c", "3");
+        List<String> sortedKeys = List.of("d", "e", "f");
+
+        List<String> result = labels.findCommonNamesWithSortedList(sortedKeys);
+        assertTrue("No matches should return empty list", result.isEmpty());
+    }
+
+    public void testFindCommonKeysWithSortedListSortedKeysAllSmaller() {
+        // Test case where sorted list keys are all smaller than ByteLabels keys
+        // ByteLabels: d, e, f
+        // Sorted list: a, b, c
+        // All comparisons will be cmp > 0, advancing sorted list index
+        ByteLabels labels = ByteLabels.fromStrings("d", "4", "e", "5", "f", "6");
+        List<String> sortedKeys = List.of("a", "b", "c");
+
+        List<String> result = labels.findCommonNamesWithSortedList(sortedKeys);
+        assertTrue("No matches should return empty list", result.isEmpty());
     }
 }

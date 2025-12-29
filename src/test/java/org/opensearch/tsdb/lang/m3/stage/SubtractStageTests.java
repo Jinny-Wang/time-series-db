@@ -21,7 +21,6 @@ import org.opensearch.tsdb.query.aggregator.TimeSeries;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -34,7 +33,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         SubtractStage stage = new SubtractStage("right_series");
 
         // Left series with timestamps 1000L, 2000L, 3000L
-        List<Sample> leftSamples = Arrays.asList(
+        List<Sample> leftSamples = List.of(
             new FloatSample(1000L, 10.0),  // matching timestamp
             new FloatSample(2000L, 20.0),  // matching timestamp
             new FloatSample(3000L, 30.0)   // missing in right series
@@ -43,7 +42,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 3000L, 1000L, "api-series");
 
         // Right series with timestamps 1000L, 2000L, 4000L (4000L not in left)
-        List<Sample> rightSamples = Arrays.asList(
+        List<Sample> rightSamples = List.of(
             new FloatSample(1000L, 1), // matching timestamp
             new FloatSample(2000L, 2), // matching timestamp
             new FloatSample(4000L, 4)  // not in left series
@@ -51,8 +50,8 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         ByteLabels rightLabels = ByteLabels.fromStrings("service", "total");
         TimeSeries rightSeries = new TimeSeries(rightSamples, rightLabels, 1000L, 4000L, 1000L, "total-series");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries);
-        List<TimeSeries> right = Arrays.asList(rightSeries);
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries);
         List<TimeSeries> result = stage.process(left, right);
 
         assertEquals(1, result.size());
@@ -87,7 +86,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         SubtractStage stage = new SubtractStage("right_series");
 
         // Left series with timestamps 1000L, 2000L, 3000L, 5000L
-        List<Sample> leftSamples = Arrays.asList(
+        List<Sample> leftSamples = List.of(
             new FloatSample(1000L, 25.0),  // matching timestamp
             new FloatSample(2000L, 50.0),  // matching timestamp
             new FloatSample(3000L, 75.0),  // missing in right series
@@ -97,7 +96,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 5000L, 1000L, "api-series");
 
         // Right series with matching labels
-        List<Sample> rightSamples = Arrays.asList(
+        List<Sample> rightSamples = List.of(
             new FloatSample(500L, 50.0),   // not in left series
             new FloatSample(1000L, 5), // matching timestamp
             new FloatSample(2000L, 10), // matching timestamp
@@ -107,12 +106,12 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         TimeSeries rightSeries = new TimeSeries(rightSamples, rightLabels, 500L, 4000L, 1000L, "total-series");
 
         // Right series with non-matching labels (should be ignored)
-        List<Sample> rightSamples2 = Arrays.asList(new FloatSample(1000L, 500.0));
+        List<Sample> rightSamples2 = List.of(new FloatSample(1000L, 500.0));
         ByteLabels rightLabels2 = ByteLabels.fromStrings("service", "db", "instance", "server2");
         TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 1000L, 1000L, "db-series");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries);
-        List<TimeSeries> right = Arrays.asList(rightSeries, rightSeries2);
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries, rightSeries2);
         List<TimeSeries> result = stage.process(left, right);
 
         assertEquals(1, result.size());
@@ -146,46 +145,46 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
     public void testNoMatchingLabels() {
         SubtractStage stage = new SubtractStage("right_series");
 
-        List<Sample> leftSamples = Arrays.asList(new FloatSample(1000L, 10.0));
+        List<Sample> leftSamples = List.of(new FloatSample(1000L, 10.0));
         ByteLabels leftLabels = ByteLabels.fromStrings("service", "api");
         TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 1000L, 1000L, "api-series");
 
-        List<Sample> rightSamples1 = Arrays.asList(new FloatSample(1000L, 100.0));
+        List<Sample> rightSamples1 = List.of(new FloatSample(1000L, 100.0));
         ByteLabels rightLabels1 = ByteLabels.fromStrings("service", "db");
         TimeSeries rightSeries1 = new TimeSeries(rightSamples1, rightLabels1, 1000L, 1000L, 1000L, "db-series");
 
-        List<Sample> rightSamples2 = Arrays.asList(new FloatSample(1000L, 150.0));
+        List<Sample> rightSamples2 = List.of(new FloatSample(1000L, 150.0));
         ByteLabels rightLabels2 = ByteLabels.fromStrings("service", "db2");
         TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 1000L, 1000L, "db-series");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries);
-        List<TimeSeries> right = Arrays.asList(rightSeries1, rightSeries2);
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries1, rightSeries2);
         List<TimeSeries> result = stage.process(left, right);
         assertTrue(result.isEmpty());
     }
 
     public void testSelectiveLabelMatching() {
         // Test selective label matching with specific label tag
-        List<String> labelTag = Arrays.asList("service"); // Only match on "service" label
+        List<String> labelTag = List.of("service"); // Only match on "service" label
         SubtractStage stage = new SubtractStage("right_series", false, labelTag);
 
         // Left series with labels: service=api, instance=server1, region=us-east
-        List<Sample> leftSamples = Arrays.asList(new FloatSample(1000L, 25.0));
+        List<Sample> leftSamples = List.of(new FloatSample(1000L, 25.0));
         ByteLabels leftLabels = ByteLabels.fromStrings("service", "api", "instance", "server1", "region", "us-east");
         TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 1000L, 1000L, "left-series");
 
         // Right series 1: service=api, instance=server2, region=us-west (should match - same service label)
-        List<Sample> rightSamples1 = Arrays.asList(new FloatSample(1000L, 1));
+        List<Sample> rightSamples1 = List.of(new FloatSample(1000L, 1));
         ByteLabels rightLabels1 = ByteLabels.fromStrings("service", "api", "instance", "server2", "region", "us-west");
         TimeSeries rightSeries1 = new TimeSeries(rightSamples1, rightLabels1, 1000L, 1000L, 1000L, "right-series-1");
 
         // Right series 2: service=db, instance=server1, region=us-east (should not match - different service)
-        List<Sample> rightSamples2 = Arrays.asList(new FloatSample(1000L, 2));
+        List<Sample> rightSamples2 = List.of(new FloatSample(1000L, 2));
         ByteLabels rightLabels2 = ByteLabels.fromStrings("service", "db", "instance", "server1", "region", "us-east");
         TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 1000L, 1000L, "right-series-2");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries);
-        List<TimeSeries> right = Arrays.asList(rightSeries1, rightSeries2);
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries1, rightSeries2);
         List<TimeSeries> result = stage.process(left, right);
 
         // Should match with rightSeries1 (same service), not rightSeries2
@@ -200,26 +199,26 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
 
     public void testSelectiveLabelMatchingWithMultipleKeys() {
         // Test selective label matching with multiple label tag
-        List<String> labelTag = Arrays.asList("service", "region"); // Match on both service and region
+        List<String> labelTag = List.of("service", "region"); // Match on both service and region
         SubtractStage stage = new SubtractStage("right_series", false, labelTag);
 
         // Left series with labels: service=api, instance=server1, region=us-east
-        List<Sample> leftSamples = Arrays.asList(new FloatSample(1000L, 50.0));
+        List<Sample> leftSamples = List.of(new FloatSample(1000L, 50.0));
         ByteLabels leftLabels = ByteLabels.fromStrings("service", "api", "instance", "server1", "region", "us-east");
         TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 1000L, 1000L, "left-series");
 
         // Right series 1: service=api, instance=server2, region=us-east (should match - same service and region labels)
-        List<Sample> rightSamples1 = Arrays.asList(new FloatSample(1000L, 1));
+        List<Sample> rightSamples1 = List.of(new FloatSample(1000L, 1));
         ByteLabels rightLabels1 = ByteLabels.fromStrings("service", "api", "instance", "server2", "region", "us-east");
         TimeSeries rightSeries1 = new TimeSeries(rightSamples1, rightLabels1, 1000L, 1000L, 1000L, "right-series-1");
 
         // Right series 2: service=api, instance=server1, region=us-west (should not match - different region)
-        List<Sample> rightSamples2 = Arrays.asList(new FloatSample(1000L, 2));
+        List<Sample> rightSamples2 = List.of(new FloatSample(1000L, 2));
         ByteLabels rightLabels2 = ByteLabels.fromStrings("service", "api", "instance", "server1", "region", "us-west");
         TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 1000L, 1000L, "right-series-2");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries);
-        List<TimeSeries> right = Arrays.asList(rightSeries1, rightSeries2);
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries1, rightSeries2);
         List<TimeSeries> result = stage.process(left, right);
 
         // Should match with rightSeries1 (same service and region), not rightSeries2
@@ -234,35 +233,31 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
 
     public void testSelectiveLabelMatchingWithMerge() {
         // Test selective label matching with multiple label tag
-        List<String> labelTag = Arrays.asList("service", "region"); // Match on both service and region
+        List<String> labelTag = List.of("service", "region"); // Match on both service and region
         SubtractStage stage = new SubtractStage("right_series", false, labelTag);
 
         // Left series with labels: service=api, instance=server1, region=us-east
-        List<Sample> leftSamples = Arrays.asList(
-            new FloatSample(1000L, 50.0),
-            new FloatSample(2000L, 100.0),
-            new FloatSample(3000L, 150.0)
-        );
+        List<Sample> leftSamples = List.of(new FloatSample(1000L, 50.0), new FloatSample(2000L, 100.0), new FloatSample(3000L, 150.0));
         ByteLabels leftLabels = ByteLabels.fromStrings("service", "api", "instance", "server1", "region", "us-east");
         TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 1000L, 1000L, "left-series");
 
         // Right series 1: service=api, instance=server2, region=us-east (should match - same service and region labels)
-        List<Sample> rightSamples1 = Arrays.asList(new FloatSample(1000L, 1), new FloatSample(2000L, 2), new FloatSample(3000L, 3));
+        List<Sample> rightSamples1 = List.of(new FloatSample(1000L, 1), new FloatSample(2000L, 2), new FloatSample(3000L, 3));
         ByteLabels rightLabels1 = ByteLabels.fromStrings("service", "api", "instance", "server2", "region", "us-east");
         TimeSeries rightSeries1 = new TimeSeries(rightSamples1, rightLabels1, 1000L, 1000L, 1000L, "right-series-1");
 
         // Right series 2: service=api, instance=server1, region=us-west (should not match - different region)
-        List<Sample> rightSamples2 = Arrays.asList(new FloatSample(1000L, 2), new FloatSample(2000L, 4), new FloatSample(3000L, 8));
+        List<Sample> rightSamples2 = List.of(new FloatSample(1000L, 2), new FloatSample(2000L, 4), new FloatSample(3000L, 8));
         ByteLabels rightLabels2 = ByteLabels.fromStrings("service", "api", "instance", "server1", "region", "us-west");
         TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 1000L, 1000L, "right-series-2");
 
         // Right series 3: service=api, instance=server2, region=us-east (should match - same service and region labels)
-        List<Sample> rightSamples3 = Arrays.asList(new FloatSample(1000L, 3), new FloatSample(2000L, 9), new FloatSample(3000L, 27));
+        List<Sample> rightSamples3 = List.of(new FloatSample(1000L, 3), new FloatSample(2000L, 9), new FloatSample(3000L, 27));
         ByteLabels rightLabels3 = ByteLabels.fromStrings("service", "api", "instance", "server2", "region", "us-east");
         TimeSeries rightSeries3 = new TimeSeries(rightSamples3, rightLabels3, 1000L, 1000L, 1000L, "right-series-2");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries);
-        List<TimeSeries> right = Arrays.asList(rightSeries1, rightSeries2, rightSeries3);
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries1, rightSeries2, rightSeries3);
         List<TimeSeries> result = stage.process(left, right);
 
         // Should match with rightSeries1 and rightSeries3 (same service and region), not rightSeries2
@@ -304,12 +299,12 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
 
     public void testFactoryAndSerializationWithLabelTag() throws IOException {
         // Test fromArgs with label tag
-        Map<String, Object> args = Map.of("right_op_reference", "series2", "keep_nans", true, "labels", Arrays.asList("service", "region"));
+        Map<String, Object> args = Map.of("right_op_reference", "series2", "keep_nans", true, "labels", List.of("service", "region"));
         SubtractStage stage = SubtractStage.fromArgs(args);
         assertEquals("series2", stage.getRightOpReferenceName());
         assertEquals("subtract", stage.getName());
         assertTrue(stage.isKeepNaNs());
-        assertEquals(stage.getLabelKeys(), Arrays.asList("service", "region"));
+        assertEquals(stage.getLabelKeys(), List.of("service", "region"));
 
         // Test serialization with label tag
         try (BytesStreamOutput out = new BytesStreamOutput()) {
@@ -318,7 +313,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
                 SubtractStage readStage = SubtractStage.readFrom(in);
                 assertEquals("series2", readStage.getRightOpReferenceName());
                 assertEquals("subtract", readStage.getName());
-                assertEquals(readStage.getLabelKeys(), Arrays.asList("service", "region"));
+                assertEquals(readStage.getLabelKeys(), List.of("service", "region"));
                 assertTrue(readStage.isKeepNaNs());
             }
         }
@@ -326,26 +321,26 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
 
     public void testSingleRightSeriesWithLabelMatching() {
         // Test that labelKeys are still applied even when right side has single series
-        List<String> labelKeys = Arrays.asList("service"); // Only match on "service" label
+        List<String> labelKeys = List.of("service"); // Only match on "service" label
         SubtractStage stage = new SubtractStage("right_series", true, labelKeys);
 
         // Left series 1: service=api, instance=server1
-        List<Sample> leftSamples1 = Arrays.asList(new FloatSample(1000L, 25.0));
+        List<Sample> leftSamples1 = List.of(new FloatSample(1000L, 25.0));
         ByteLabels leftLabels1 = ByteLabels.fromStrings("service", "api", "instance", "server1");
         TimeSeries leftSeries1 = new TimeSeries(leftSamples1, leftLabels1, 1000L, 1000L, 1000L, "left-series-1");
 
         // Left series 2: service=db, instance=server2 (should not match)
-        List<Sample> leftSamples2 = Arrays.asList(new FloatSample(1000L, 50.0));
+        List<Sample> leftSamples2 = List.of(new FloatSample(1000L, 50.0));
         ByteLabels leftLabels2 = ByteLabels.fromStrings("service", "db", "instance", "server2");
         TimeSeries leftSeries2 = new TimeSeries(leftSamples2, leftLabels2, 1000L, 1000L, 1000L, "left-series-2");
 
         // Single right series: service=api, instance=server3 (should match leftSeries1 only)
-        List<Sample> rightSamples = Arrays.asList(new FloatSample(1000L, 5));
+        List<Sample> rightSamples = List.of(new FloatSample(1000L, 5));
         ByteLabels rightLabels = ByteLabels.fromStrings("service", "api", "instance", "server3");
         TimeSeries rightSeries = new TimeSeries(rightSamples, rightLabels, 1000L, 1000L, 1000L, "right-series");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries1, leftSeries2);
-        List<TimeSeries> right = Arrays.asList(rightSeries);
+        List<TimeSeries> left = List.of(leftSeries1, leftSeries2);
+        List<TimeSeries> right = List.of(rightSeries);
         List<TimeSeries> result = stage.process(left, right);
 
         // Should only find one matching series
@@ -366,9 +361,9 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
 
         // Test case 1: Empty left input
         List<TimeSeries> emptyLeft = new ArrayList<>();
-        List<TimeSeries> rightList = Arrays.asList(
+        List<TimeSeries> rightList = List.of(
             new TimeSeries(
-                Arrays.asList(new FloatSample(1000L, 100.0)),
+                List.of(new FloatSample(1000L, 100.0)),
                 ByteLabels.fromStrings("service", "api"),
                 1000L,
                 1000L,
@@ -380,9 +375,9 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         assertTrue("Should return empty list when left input is empty", result1.isEmpty());
 
         // Test case 2: Empty right input
-        List<TimeSeries> leftList = Arrays.asList(
+        List<TimeSeries> leftList = List.of(
             new TimeSeries(
-                Arrays.asList(new FloatSample(1000L, 10.0)),
+                List.of(new FloatSample(1000L, 10.0)),
                 ByteLabels.fromStrings("service", "api"),
                 1000L,
                 1000L,
@@ -400,7 +395,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         SubtractStage stage = new SubtractStage("right_series", false, Collections.emptyList());
 
         // Left series with NaN values
-        List<Sample> leftSamples = Arrays.asList(
+        List<Sample> leftSamples = List.of(
             new FloatSample(1000L, 10.0),      // normal value
             new FloatSample(2000L, Double.NaN), // NaN -> treated as 0.0
             new FloatSample(3000L, 30.0),      // normal value
@@ -410,7 +405,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 4000L, 1000L, "left-series");
 
         // Right series with NaN values
-        List<Sample> rightSamples = Arrays.asList(
+        List<Sample> rightSamples = List.of(
             new FloatSample(1000L, 5.0),       // normal value
             new FloatSample(2000L, 2.0),       // normal value
             new FloatSample(3000L, Double.NaN), // NaN -> treated as 0.0
@@ -419,8 +414,8 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         ByteLabels rightLabels = ByteLabels.fromStrings("service", "api");
         TimeSeries rightSeries = new TimeSeries(rightSamples, rightLabels, 1000L, 4000L, 1000L, "right-series");
 
-        List<TimeSeries> left = Arrays.asList(leftSeries);
-        List<TimeSeries> right = Arrays.asList(rightSeries);
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries);
         List<TimeSeries> result = stage.process(left, right);
 
         assertEquals(1, result.size());
@@ -458,7 +453,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
         verifyXContent(stageWithoutLabels, "{\"right_op_reference\":\"test_reference\",\"keep_nans\":false}");
 
         // Test toXContent with labelKeys
-        List<String> labelKeys = Arrays.asList("service", "region");
+        List<String> labelKeys = List.of("service", "region");
         SubtractStage stageWithLabels = new SubtractStage("test_reference", true, labelKeys);
         verifyXContent(
             stageWithLabels,
@@ -492,7 +487,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
 
         assertNotEquals("Stage should not equal different class", "string", stage1);
 
-        List<String> labelKeys = Arrays.asList("service", "region");
+        List<String> labelKeys = List.of("service", "region");
         SubtractStage stageWithLabels1 = new SubtractStage("ref", true, labelKeys);
         SubtractStage stageWithLabels2 = new SubtractStage("ref", true, labelKeys);
         assertEquals("Stages with same reference and label keys should be equal", stageWithLabels1, stageWithLabels2);
@@ -504,7 +499,7 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
             stageWithLabels3
         );
 
-        List<String> differentLabelKeys = Arrays.asList("service", "zone");
+        List<String> differentLabelKeys = List.of("service", "zone");
         SubtractStage stageWithDiffLabels = new SubtractStage("ref", true, differentLabelKeys);
         assertNotEquals("Stages with different label keys should not be equal", stageWithLabels1, stageWithDiffLabels);
 
@@ -517,11 +512,122 @@ public class SubtractStageTests extends AbstractWireSerializingTestCase<Subtract
 
     @Override
     protected SubtractStage createTestInstance() {
-        return new SubtractStage(
-            randomAlphaOfLengthBetween(3, 10),
-            randomBoolean(),
-            randomBoolean() ? null : Arrays.asList("service", "region")
-        );
+        return new SubtractStage(randomAlphaOfLengthBetween(3, 10), randomBoolean(), randomBoolean() ? null : List.of("service", "region"));
     }
 
+    public void testCommonTagKeyExtraction() {
+        // Test that common tag keys are extracted when no label keys are specified
+        // Left: one series with tag1:a, tag2:bb, tag3:c
+        // Right: series 1 with tag1:a, tag2:b and series 2 with tag3:c, tag2:b
+        SubtractStage stage = new SubtractStage("right_series", false, null);
+
+        // Left series: tag1:a, tag2:bb, tag3:c
+        List<Sample> leftSamples = List.of(new FloatSample(1000L, 1.0), new FloatSample(2000L, 2.0), new FloatSample(3000L, 3.0));
+        ByteLabels leftLabels = ByteLabels.fromMap(Map.of("tag1", "a", "tag2", "bb", "tag3", "c"));
+        TimeSeries leftSeries = new TimeSeries(leftSamples, leftLabels, 1000L, 3000L, 1000L, "left-series");
+
+        // Right series 1: tag1:a, tag2:b
+        List<Sample> rightSamples1 = List.of(new FloatSample(1000L, 10.0), new FloatSample(2000L, 20.0), new FloatSample(3000L, 30.0));
+        ByteLabels rightLabels1 = ByteLabels.fromMap(Map.of("tag1", "a", "tag2", "b"));
+        TimeSeries rightSeries1 = new TimeSeries(rightSamples1, rightLabels1, 1000L, 3000L, 1000L, "right-series-1");
+
+        // Right series 2: tag3:c, tag2:b
+        List<Sample> rightSamples2 = List.of(new FloatSample(1000L, 5.0), new FloatSample(2000L, 10.0), new FloatSample(3000L, 15.0));
+        ByteLabels rightLabels2 = ByteLabels.fromMap(Map.of("tag3", "c", "tag2", "b"));
+        TimeSeries rightSeries2 = new TimeSeries(rightSamples2, rightLabels2, 1000L, 3000L, 1000L, "right-series-2");
+
+        List<TimeSeries> left = List.of(leftSeries);
+        List<TimeSeries> right = List.of(rightSeries1, rightSeries2);
+        List<TimeSeries> result = stage.process(left, right);
+
+        // Common tag keys are tag2
+        // Both right series have tag2:b, so they group into the same bucket
+        // Since there's only one bucket, tag matching is skipped and left series is processed against merged right series
+        // Merged right series: (10+5)=15, (20+10)=30, (30+15)=45
+        assertEquals(1, result.size());
+        TimeSeries resultSeries = result.get(0);
+
+        // Expected: 1-15=-14, 2-30=-28, 3-45=-42
+        List<Sample> expectedSamples = List.of(
+            new FloatSample(1000L, -14.0),  // 1 - (10+5)
+            new FloatSample(2000L, -28.0),  // 2 - (20+10)
+            new FloatSample(3000L, -42.0)   // 3 - (30+15)
+        );
+        assertSamplesEqual("Subtract with merged right series", expectedSamples, resultSeries.getSamples(), 0.001);
+
+        // Verify labels come from left series
+        assertEquals("a", resultSeries.getLabels().get("tag1"));
+        assertEquals("bb", resultSeries.getLabels().get("tag2"));
+        assertEquals("c", resultSeries.getLabels().get("tag3"));
+    }
+
+    /**
+     * Test extractGroupLabels with null labels - should return null.
+     * This tests the null check at lines 433-435 in AbstractBinaryProjectionStage.
+     */
+    public void testExtractGroupLabelsWithNullLabels() {
+        SubtractStage stage = new SubtractStage("right_series");
+        List<Sample> samples = List.of(new FloatSample(1000L, 10.0));
+        TimeSeries seriesWithNullLabels = new TimeSeries(samples, null, 1000L, 1000L, 1000L, null);
+
+        ByteLabels result = stage.extractGroupLabels(seriesWithNullLabels, null);
+        assertNull("extractGroupLabels should return null when series labels are null", result);
+
+        // Also test with empty labelKeys
+        result = stage.extractGroupLabels(seriesWithNullLabels, List.of());
+        assertNull("extractGroupLabels should return null when series labels are null, even with empty labelKeys", result);
+
+        // Also test with specific labelKeys
+        result = stage.extractGroupLabels(seriesWithNullLabels, List.of("service"));
+        assertNull("extractGroupLabels should return null when series labels are null, even with specific labelKeys", result);
+    }
+
+    /**
+     * Test extractGroupLabels with null labelKeys - should return all labels as ByteLabels.
+     */
+    public void testExtractGroupLabelsWithNullLabelKeys() {
+        SubtractStage stage = new SubtractStage("right_series");
+        ByteLabels originalLabels = ByteLabels.fromStrings("service", "api", "region", "us-east");
+        List<Sample> samples = List.of(new FloatSample(1000L, 10.0));
+        TimeSeries series = new TimeSeries(samples, originalLabels, 1000L, 1000L, 1000L, null);
+
+        ByteLabels result = stage.extractGroupLabels(series, null);
+        assertNotNull("extractGroupLabels should return ByteLabels when labelKeys is null", result);
+        assertEquals("api", result.get("service"));
+        assertEquals("us-east", result.get("region"));
+        // Should return the same instance since it's already ByteLabels
+        assertSame("Should return the same ByteLabels instance when already ByteLabels", originalLabels, result);
+    }
+
+    /**
+     * Test extractGroupLabels with empty labelKeys - should return all labels as ByteLabels.
+     */
+    public void testExtractGroupLabelsWithEmptyLabelKeys() {
+        SubtractStage stage = new SubtractStage("right_series");
+        ByteLabels originalLabels = ByteLabels.fromStrings("service", "api", "region", "us-east");
+        List<Sample> samples = List.of(new FloatSample(1000L, 10.0));
+        TimeSeries series = new TimeSeries(samples, originalLabels, 1000L, 1000L, 1000L, null);
+
+        ByteLabels result = stage.extractGroupLabels(series, List.of());
+        assertNotNull("extractGroupLabels should return ByteLabels when labelKeys is empty", result);
+        assertEquals("api", result.get("service"));
+        assertEquals("us-east", result.get("region"));
+        // Should return the same instance since it's already ByteLabels
+        assertSame("Should return the same ByteLabels instance when already ByteLabels", originalLabels, result);
+    }
+
+    /**
+     * Test extractGroupLabels with missing required label key - should return null.
+     * This tests the case where labelKeys is specified but one of the required labels is missing.
+     */
+    public void testExtractGroupLabelsWithMissingRequiredLabel() {
+        SubtractStage stage = new SubtractStage("right_series");
+        ByteLabels labels = ByteLabels.fromStrings("service", "api", "region", "us-east");
+        List<Sample> samples = List.of(new FloatSample(1000L, 10.0));
+        TimeSeries series = new TimeSeries(samples, labels, 1000L, 1000L, 1000L, null);
+
+        // Request a label key that doesn't exist in the series
+        ByteLabels result = stage.extractGroupLabels(series, List.of("missing_label"));
+        assertNull("extractGroupLabels should return null when required label key is missing", result);
+    }
 }

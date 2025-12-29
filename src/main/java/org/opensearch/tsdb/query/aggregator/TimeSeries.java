@@ -43,7 +43,7 @@ import java.util.Objects;
  * <pre>{@code
  * // Create time series with Labels object
  * Labels labels = ByteLabels.fromMap(Map.of("region", "us-east", "service", "api"));
- * List<Sample> samples = Arrays.asList(
+ * List<Sample> samples = List.of(
  *     new FloatSample(1000L, 1.0f),
  *     new FloatSample(2000L, 2.0f)
  * );

@@ -70,6 +70,11 @@ public class SubtractStage extends AbstractBinaryProjectionStage {
         return labelKeys;
     }
 
+    @Override
+    protected boolean shouldExtractCommonTagKeys() {
+        return true;
+    }
+
     protected boolean isKeepNaNs() {
         return keepNaNs;
     }

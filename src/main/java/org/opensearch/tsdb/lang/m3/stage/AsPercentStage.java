@@ -75,6 +75,11 @@ public class AsPercentStage extends AbstractBinaryProjectionStage {
     }
 
     @Override
+    protected boolean shouldExtractCommonTagKeys() {
+        return true;
+    }
+
+    @Override
     protected TimeSeries mergeMatchingSeries(List<TimeSeries> rightTimeSeries) {
         // AsPercent expects only one time series for matched group
         if (rightTimeSeries.isEmpty()) {

@@ -200,7 +200,7 @@ public final class TimeSeriesNormalizer {
      *
      * <p><b>Usage Example:</b></p>
      * <pre>{@code
-     * List<TimeSeries> series = Arrays.asList(seriesA, seriesB);
+     * List<TimeSeries> series = List.of(seriesA, seriesB);
      * List<TimeSeries> normalized = TimeSeriesNormalizer.normalize(
      *     series,
      *     StepSizeStrategy.LCM,

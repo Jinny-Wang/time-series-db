@@ -7,6 +7,7 @@
  */
 package org.opensearch.tsdb.lang.m3.stage;
 
+import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.core.model.Labels;
 import org.opensearch.tsdb.core.model.Sample;
 import org.opensearch.tsdb.query.aggregator.TimeSeries;
@@ -197,6 +198,16 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
     protected abstract List<String> getLabelKeys();
 
     /**
+     * Check if this stage should extract common tag keys when no label keys are specified.
+     * Subclasses can override this to enable common tag key extraction (e.g., asPercent, divide, subtract).
+     *
+     * @return true if common tag keys should be extracted when no label keys are specified, false otherwise
+     */
+    protected boolean shouldExtractCommonTagKeys() {
+        return false;
+    }
+
+    /**
      * Process two time series inputs and return the resulting time series aligning timestamps and matching labels.
      * When the right operand has a single series, all left series are processed against it without label matching.
      * When the right operand has multiple series, label matching is used to pair left and right series.
@@ -298,6 +309,7 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
     /**
      * Process left time series against multiple right time series.
      * Matches time series by labels using selective matching if labelKeys are provided. Otherwise match entire labels set.
+     * Groups right series first for efficiency. If only one group remains after grouping, skips tag matching.
      * After matching, delegates to processWithoutLabelMatching for the actual processing.
      *
      * @param left The left operand time series list
@@ -305,17 +317,32 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
      * @return The result time series list
      */
     protected List<TimeSeries> processWithLabelMatching(List<TimeSeries> left, List<TimeSeries> right) {
-        // TODO we need to check intersect of left and right on common tags and use them when no grouping labels
         List<String> labelKeys = getLabelKeys();
 
-        // Build matched pairs: group left series by their matching right series
-        Map<TimeSeries, List<TimeSeries>> rightToLeftMap = new HashMap<>();
+        // If no label keys specified and this stage should extract common tag keys, do so
+        if ((labelKeys == null || labelKeys.isEmpty()) && shouldExtractCommonTagKeys()) {
+            labelKeys = extractCommonTagKeys(left, right);
+        }
 
+        // Group and merge right series by label keys for efficient processing
+        Map<ByteLabels, TimeSeries> rightGroups = groupAndMergeRightSeriesByLabels(right, labelKeys);
+
+        // If only one group after grouping, process all left series against that single merged right series
+        if (rightGroups.size() == 1) {
+            TimeSeries mergedRightSeries = rightGroups.values().iterator().next();
+            return processWithoutLabelMatching(left, mergedRightSeries);
+        }
+
+        // Multiple groups - perform tag matching for each left series using the grouped map
+        // Build matched pairs: group left series by their matching right series for efficient normalization
+        Map<TimeSeries, List<TimeSeries>> rightToLeftMap = new HashMap<>();
         for (TimeSeries leftSeries : left) {
-            List<TimeSeries> matchingRightSeriesList = findMatchingTimeSeries(right, leftSeries.getLabels(), labelKeys);
-            TimeSeries matchingRightSeries = mergeMatchingSeries(matchingRightSeriesList);
-            if (matchingRightSeries != null) {
-                rightToLeftMap.computeIfAbsent(matchingRightSeries, k -> new ArrayList<>()).add(leftSeries);
+            ByteLabels leftGroupLabels = extractGroupLabels(leftSeries, labelKeys);
+            if (leftGroupLabels != null) {
+                TimeSeries matchingRightSeries = rightGroups.get(leftGroupLabels);
+                if (matchingRightSeries != null) {
+                    rightToLeftMap.computeIfAbsent(matchingRightSeries, k -> new ArrayList<>()).add(leftSeries);
+                }
             }
         }
 
@@ -331,6 +358,104 @@ public abstract class AbstractBinaryProjectionStage implements BinaryPipelineSta
         }
 
         return result;
+    }
+
+    /**
+     * Extract common tag keys from left and right time series.
+     * Finds tag keys that are present in at least one left series and at least one right series.
+     * This allows matching series by their common tags even when not all series have all tags.
+     *
+     * @param left The left operand time series list
+     * @param right The right operand time series list
+     * @return List of common tag keys, or empty list if none found
+     */
+    protected List<String> extractCommonTagKeys(List<TimeSeries> left, List<TimeSeries> right) {
+        if (left.isEmpty() || right.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        // Collect all Labels from left and right series
+        List<Labels> allLabels = new ArrayList<>();
+        for (TimeSeries series : left) {
+            allLabels.add(series.getLabels());
+        }
+        for (TimeSeries series : right) {
+            allLabels.add(series.getLabels());
+        }
+
+        // Use Labels.findCommonLabelNames() to find names present in all Labels instances
+        // This method handles null and empty labels internally
+        return Labels.findCommonLabelNames(allLabels);
+    }
+
+    /**
+     * Group and merge right time series by the specified label keys.
+     * If labelKeys is null or empty, groups by all labels (full label matching).
+     * Series with the same group labels are merged together.
+     *
+     * @param right The right operand time series list
+     * @param labelKeys The label keys to group by, or null/empty for full label matching
+     * @return Map of grouped labels to merged time series
+     */
+    protected Map<ByteLabels, TimeSeries> groupAndMergeRightSeriesByLabels(List<TimeSeries> right, List<String> labelKeys) {
+        Map<ByteLabels, List<TimeSeries>> groups = new HashMap<>();
+
+        // First, group series by labels
+        for (TimeSeries series : right) {
+            ByteLabels groupLabels = extractGroupLabels(series, labelKeys);
+            if (groupLabels != null) {
+                groups.computeIfAbsent(groupLabels, k -> new ArrayList<>()).add(series);
+            }
+        }
+
+        // Then, merge series in each group
+        Map<ByteLabels, TimeSeries> mergedGroups = new HashMap<>();
+        for (Map.Entry<ByteLabels, List<TimeSeries>> entry : groups.entrySet()) {
+            TimeSeries mergedSeries = mergeMatchingSeries(entry.getValue());
+            if (mergedSeries != null) {
+                mergedGroups.put(entry.getKey(), mergedSeries);
+            }
+        }
+
+        return mergedGroups;
+    }
+
+    /**
+     * Extract group labels from a time series based on the specified label keys.
+     * If labelKeys is null or empty, returns all labels (for full label matching).
+     *
+     * @param series The time series to extract labels from
+     * @param labelKeys The label keys to extract, or null/empty for all labels
+     * @return ByteLabels containing the extracted labels, or null if required labels are missing
+     */
+    protected ByteLabels extractGroupLabels(TimeSeries series, List<String> labelKeys) {
+        Labels seriesLabels = series.getLabels();
+        if (seriesLabels == null) {
+            return null;
+        }
+
+        // If no label keys specified, use all labels
+        if (labelKeys == null || labelKeys.isEmpty()) {
+            if (seriesLabels instanceof ByteLabels) {
+                return (ByteLabels) seriesLabels;
+            } else {
+                return ByteLabels.fromMap(seriesLabels.toMapView());
+            }
+        }
+
+        // Extract only the specified label keys
+        Map<String, String> groupLabelMap = new HashMap<>();
+        for (String labelName : labelKeys) {
+            if (seriesLabels.has(labelName)) {
+                String labelValue = seriesLabels.get(labelName);
+                groupLabelMap.put(labelName, labelValue);
+            } else {
+                // Missing required label - return null to drop this series
+                return null;
+            }
+        }
+
+        return ByteLabels.fromMap(groupLabelMap);
     }
 
     protected abstract TimeSeries mergeMatchingSeries(List<TimeSeries> rightTimeSeries);
