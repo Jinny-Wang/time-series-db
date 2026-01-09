@@ -10,34 +10,20 @@ package org.opensearch.tsdb.framework;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
-import org.opensearch.action.admin.cluster.state.ClusterStateResponse;
-import org.opensearch.action.admin.indices.stats.IndexShardStats;
-import org.opensearch.action.admin.indices.stats.IndexStats;
-import org.opensearch.action.admin.indices.stats.IndicesStatsResponse;
-import org.opensearch.action.admin.indices.stats.ShardStats;
-import org.opensearch.action.bulk.BulkRequest;
-import org.opensearch.action.bulk.BulkResponse;
-import org.opensearch.action.index.IndexRequest;
-import org.opensearch.cluster.routing.IndexRoutingTable;
-import org.opensearch.cluster.routing.IndexShardRoutingTable;
-import org.opensearch.cluster.routing.ShardRouting;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.test.OpenSearchIntegTestCase;
+import org.opensearch.transport.client.Client;
 import org.opensearch.tsdb.core.mapping.Constants;
-import org.opensearch.tsdb.core.model.ByteLabels;
 import org.opensearch.tsdb.framework.models.IndexConfig;
 import org.opensearch.tsdb.framework.models.InputDataConfig;
 import org.opensearch.tsdb.framework.models.TestCase;
 import org.opensearch.tsdb.framework.models.TestSetup;
 import org.opensearch.tsdb.framework.models.TimeSeriesSample;
-import org.opensearch.tsdb.utils.TSDBTestUtils;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -86,7 +72,7 @@ import java.util.Map;
  */
 @SuppressWarnings("unchecked")
 @OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.TEST, numDataNodes = 0, numClientNodes = 0, supportsDedicatedMasters = false, autoManageMasterNodes = true)
-public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
+public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase implements TimeSeriesTestOperations {
 
     // TODO: consider making ingestion more realistic so we do not require an extended ooo_cutoff
     private static final String DEFAULT_INDEX_SETTINGS_YAML = """
@@ -104,9 +90,52 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
     protected List<IndexConfig> indexConfigs;
     private String customIndexSettingsYaml;
 
+    /** Default index settings parsed from YAML, used by TimeSeriesTestOperations mixin */
+    private Map<String, Object> defaultIndexSettings;
+
+    /** Default index mapping parsed from Constants, used by TimeSeriesTestOperations mixin */
+    private Map<String, Object> defaultIndexMapping;
+
     @Override
     public void setUp() throws Exception {
         super.setUp();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TimeSeriesTestOperations interface implementation
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Resolves the client for a given cluster alias.
+     * For single-cluster tests, always returns the local client (ignores alias).
+     *
+     * @param clusterAlias the cluster alias (ignored for single-cluster framework)
+     * @return the local cluster client
+     */
+    @Override
+    public Client resolveClient(String clusterAlias) {
+        // Single-cluster framework always uses local client
+        return client();
+    }
+
+    /**
+     * Returns the default index settings.
+     *
+     * @return map of setting name to value
+     */
+    @Override
+    public Map<String, Object> getDefaultIndexSettings() {
+        return defaultIndexSettings;
+    }
+
+    /**
+     * Returns the default index mapping.
+     *
+     * @return the mapping configuration
+     */
+    @Override
+    public Map<String, Object> getDefaultIndexMapping() {
+        return defaultIndexMapping;
     }
 
     /**
@@ -158,11 +187,11 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
             // Parse the YAML settings template (use custom if provided, otherwise use default)
             ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
             String settingsYaml = customIndexSettingsYaml != null ? customIndexSettingsYaml : DEFAULT_INDEX_SETTINGS_YAML;
-            Map<String, Object> defaultSettings = yamlMapper.readValue(settingsYaml, Map.class);
+            defaultIndexSettings = yamlMapper.readValue(settingsYaml, Map.class);
 
             // Get the actual TSDB mapping from Constants (same as engine uses)
             // This ensures test mapping matches production mapping
-            Map<String, Object> defaultMapping = parseMappingFromConstants();
+            defaultIndexMapping = parseMappingFromConstants();
 
             // Initialize index configs list
             indexConfigs = new ArrayList<>();
@@ -176,7 +205,7 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
                 throw new IllegalStateException("Test setup must specify at least one index configuration in index_configs");
             }
 
-            // Validate and create index configs
+            // Validate and create index configs (preserving cluster from YAML if specified)
             for (IndexConfig testIndexConfig : testSetup.indexConfigs()) {
                 if (testIndexConfig.name() == null || testIndexConfig.name().trim().isEmpty()) {
                     throw new IllegalArgumentException("Index configuration must specify a non-empty index name");
@@ -185,7 +214,8 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
                 String indexName = testIndexConfig.name();
                 int shards = testIndexConfig.shards();
                 int replicas = testIndexConfig.replicas();
-                indexConfigs.add(new IndexConfig(indexName, shards, replicas, defaultSettings, defaultMapping));
+                String cluster = testIndexConfig.cluster();
+                indexConfigs.add(new IndexConfig(indexName, shards, replicas, defaultIndexSettings, defaultIndexMapping, cluster));
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to create index config", e);
@@ -212,9 +242,9 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
 
     protected void ingestTestData() throws Exception {
 
-        // Create all indices
+        // Create all indices (uses mixin method which handles cluster routing)
         for (IndexConfig indexConfig : indexConfigs) {
-            createTimeSeriesIndex(indexConfig);
+            createTimeSeriesIndex(indexConfig.getCluster(), indexConfig);
         }
 
         ensureGreen();
@@ -222,7 +252,10 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
         if (testCase.inputDataList() != null && !testCase.inputDataList().isEmpty()) {
             for (InputDataConfig inputDataConfig : testCase.inputDataList()) {
                 List<TimeSeriesSample> samples = TimeSeriesSampleGenerator.generateSamples(inputDataConfig);
-                ingestSamples(samples, inputDataConfig.indexName());
+                // Use the cluster from input data config
+                String cluster = inputDataConfig.getCluster();
+                ingestSamples(cluster, samples, inputDataConfig.indexName());
+                flushAndRefresh(cluster, inputDataConfig.indexName());
             }
         }
 
@@ -238,75 +271,16 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
     protected void clearIndexIfExists() throws Exception {
         for (IndexConfig indexConfig : indexConfigs) {
             String indexName = indexConfig.name();
-            if (client().admin().indices().prepareExists(indexName).get().isExists()) {
-                client().admin().indices().prepareDelete(indexName).get();
+            Client targetClient = resolveClient(indexConfig.getCluster());
+            if (targetClient.admin().indices().prepareExists(indexName).get().isExists()) {
+                targetClient.admin().indices().prepareDelete(indexName).get();
                 assertBusy(
-                    () -> { assertFalse("Index should be deleted", client().admin().indices().prepareExists(indexName).get().isExists()); }
+                    () -> {
+                        assertFalse("Index should be deleted", targetClient.admin().indices().prepareExists(indexName).get().isExists());
+                    }
                 );
             }
         }
-    }
-
-    protected void createTimeSeriesIndex(IndexConfig indexConfig) throws Exception {
-        // Merge default settings with index configuration
-        Map<String, Object> allSettings = new HashMap<>(indexConfig.settings());
-        allSettings.put("index.number_of_shards", indexConfig.shards());
-        allSettings.put("index.number_of_replicas", indexConfig.replicas());
-
-        Settings settings = Settings.builder().loadFromMap(allSettings).build();
-        Map<String, Object> mappingConfig = indexConfig.mapping();
-
-        client().admin().indices().prepareCreate(indexConfig.name()).setSettings(settings).setMapping(mappingConfig).get();
-    }
-
-    /**
-     * Ingest time series samples using TSDBDocument format.
-     * This method minimizes duplication with TSDBEngine by using the same document format
-     * that TSDBEngine expects and parses.
-     *
-     * <p>The TSDBDocument format used here is:
-     * <pre>
-     * {
-     *   "labels": "name http_requests method GET status 200",  // space-separated key-value pairs
-     *   "timestamp": 1234567890,                               // epoch millis
-     *   "value": 100.5                                          // double value
-     * }
-     * </pre>
-     *
-     * <p>This directly maps to how TSDBEngine's TSDBDocument.fromParsedDocument() expects data,
-     * ensuring that test ingestion follows the same code path as production ingestion.
-     *
-     * @param samples The list of samples to ingest
-     * @param indexName The name of the index to ingest data into
-     * @throws Exception if ingestion fails
-     */
-    protected void ingestSamples(List<TimeSeriesSample> samples, String indexName) throws Exception {
-        BulkRequest bulkRequest = new BulkRequest();
-
-        // Send one document per sample to match production data shape
-        for (TimeSeriesSample sample : samples) {
-            Map<String, String> labels = sample.labels();
-            ByteLabels byteLabels = ByteLabels.fromMap(labels);
-
-            // Create TSDBDocument format JSON using the utility method
-            // This ensures consistency with TSDBEngine's document parsing
-            String documentJson = TSDBTestUtils.createTSDBDocumentJson(sample);
-            String seriesId = byteLabels.toString();
-
-            IndexRequest request = new IndexRequest(indexName).source(documentJson, XContentType.JSON).routing(seriesId);
-            bulkRequest.add(request);
-        }
-
-        // Execute bulk request
-        if (bulkRequest.numberOfActions() > 0) {
-            BulkResponse bulkResponse = client().bulk(bulkRequest).actionGet();
-            if (bulkResponse.hasFailures()) {
-                throw new RuntimeException("Bulk ingestion failed: " + bulkResponse.buildFailureMessage());
-            }
-        }
-
-        client().admin().indices().prepareFlush(indexName).get();
-        client().admin().indices().prepareRefresh(indexName).get();
     }
 
     @Override
@@ -332,96 +306,4 @@ public abstract class TimeSeriesTestFramework extends OpenSearchIntegTestCase {
         // Disable MockEngineFactoryPlugin to avoid conflicts with TSDBEngine
         return false;
     }
-
-    /**
-     * Validates shard distribution across cluster nodes.
-     *
-     * @param indexConfig The index configuration
-     */
-    protected void validateShardDistribution(IndexConfig indexConfig) {
-        String indexName = indexConfig.name();
-        int expectedShards = indexConfig.shards();
-        int expectedReplicas = indexConfig.replicas();
-
-        ClusterStateResponse stateResponse = client().admin().cluster().prepareState().setIndices(indexName).get();
-
-        IndexRoutingTable indexRoutingTable = stateResponse.getState().routingTable().index(indexName);
-
-        assertNotNull("Index routing table should exist", indexRoutingTable);
-        assertEquals("Number of shards mismatch", expectedShards, indexRoutingTable.shards().size());
-
-        for (int shardId = 0; shardId < expectedShards; shardId++) {
-            IndexShardRoutingTable shardRoutingTable = indexRoutingTable.shard(shardId);
-            assertNotNull("Shard routing table should exist for shard " + shardId, shardRoutingTable);
-
-            int expectedCopies = 1 + expectedReplicas; // primary + replicas
-            assertEquals("Shard " + shardId + " should have " + expectedCopies + " copies", expectedCopies, shardRoutingTable.size());
-
-            // Check that all shard copies are active
-            for (ShardRouting shardRouting : shardRoutingTable) {
-                assertTrue("Shard " + shardId + " should be active: " + shardRouting, shardRouting.active());
-            }
-        }
-
-    }
-
-    /**
-     * Returns document count per shard.
-     *
-     * @param indexConfig The index configuration
-     * @return Map of shard ID to document count
-     */
-    protected Map<Integer, Long> getShardDocumentCounts(IndexConfig indexConfig) throws Exception {
-        String indexName = indexConfig.name();
-        Map<Integer, Long> shardCounts = new HashMap<>();
-
-        IndicesStatsResponse statsResponse = client().admin().indices().prepareStats(indexName).clear().setDocs(true).get();
-        IndexStats indexStats = statsResponse.getIndex(indexName);
-
-        if (indexStats == null) {
-            return shardCounts;
-        }
-
-        for (IndexShardStats shardStats : indexStats.getIndexShards().values()) {
-            int shardId = shardStats.getShardId().id();
-            for (ShardStats shard : shardStats.getShards()) {
-                if (shard.getShardRouting().primary()) {
-                    long docCount = shard.getStats().getDocs().getCount();
-                    shardCounts.put(shardId, docCount);
-                    break;
-                }
-            }
-        }
-
-        return shardCounts;
-    }
-
-    /**
-     * Validates minimum document count per shard.
-     *
-     * @param indexConfig The index configuration
-     * @param minDocsPerShard Minimum documents per shard
-     */
-    protected void validateDataDistribution(IndexConfig indexConfig, int minDocsPerShard) throws Exception {
-        Map<Integer, Long> shardCounts = getShardDocumentCounts(indexConfig);
-        int expectedShards = indexConfig.shards();
-
-        assertEquals("Should have document counts for all shards", expectedShards, shardCounts.size());
-
-        for (int shardId = 0; shardId < expectedShards; shardId++) {
-            long count = shardCounts.getOrDefault(shardId, 0L);
-            assertTrue("Shard " + shardId + " has " + count + " documents, expected at least " + minDocsPerShard, count >= minDocsPerShard);
-        }
-
-    }
-
-    /**
-     * Validates that all shards contain at least one document.
-     *
-     * @param indexConfig The index configuration
-     */
-    protected void validateAllShardsHaveData(IndexConfig indexConfig) throws Exception {
-        validateDataDistribution(indexConfig, 1);
-    }
-
 }

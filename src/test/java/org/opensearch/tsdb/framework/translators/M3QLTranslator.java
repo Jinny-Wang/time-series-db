@@ -19,11 +19,13 @@ import java.time.Instant;
  * Translator for M3QL queries.
  * Converts M3QL query strings to OpenSearch SearchRequest using the M3OSTranslator.
  * Used in both REST tests and internal cluster tests.
+ *
+ * <p>Supports Cross-Cluster Search (CCS) index patterns and ccs_minimize_roundtrips setting.
  */
 public class M3QLTranslator implements QueryConfigTranslator {
 
     @Override
-    public SearchRequest translate(QueryConfig queryConfig, String indexName) throws Exception {
+    public SearchRequest translate(QueryConfig queryConfig, String indices) throws Exception {
         String queryString = queryConfig.query();
         TimeConfig config = queryConfig.config();
 
@@ -52,9 +54,15 @@ public class M3QLTranslator implements QueryConfigTranslator {
         // Translate M3QL query string to SearchSourceBuilder
         SearchSourceBuilder searchSource = M3OSTranslator.translate(queryString, params);
 
-        // Create SearchRequest with the index name
-        SearchRequest searchRequest = new SearchRequest(indexName);
+        // Create SearchRequest with parsed indices (supports CCS patterns)
+        String[] indexArray = parseIndices(indices);
+        SearchRequest searchRequest = new SearchRequest(indexArray);
         searchRequest.source(searchSource);
+
+        // Apply CCS minimize roundtrips setting if this is a cross-cluster query
+        if (queryConfig.isCrossClusterQuery()) {
+            searchRequest.setCcsMinimizeRoundtrips(queryConfig.isCcsMinimizeRoundtrips());
+        }
 
         return searchRequest;
     }

@@ -12,26 +12,51 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
- * Input data configuration for time series testing
+ * Input data configuration for time series testing.
  *
- * Supports two modes:
+ * <p>Supports two modes:
  *
- * 1. FIXED INTERVAL DATA (input_data_type: FIXED_INTERVAL with time_config and metrics):
+ * <p>1. FIXED INTERVAL DATA (input_data_type: FIXED_INTERVAL with time_config and metrics):
  *    - Uses fixed time intervals defined by min_timestamp, max_timestamp, and step
  *    - Values are provided as an array that aligns with generated timestamps
  *    - Null values in the array represent missing data points (blips) at those timestamps
  *
- * 2. GENERIC DATA (input_data_type: GENERIC with generic_metrics):
+ * <p>2. GENERIC DATA (input_data_type: GENERIC with generic_metrics):
  *    - Each data point has an explicit timestamp-value pair
  *    - Missing data is represented by absence of data points (no entry for that time)
  *    - No null values needed - if there's no data at a time, simply don't include that timestamp
  *
- * The indexName field specifies which index this data should be ingested into.
+ * <p>The indexName field specifies which index this data should be ingested into.
  * It must match one of the index names defined in the test setup's index_configs.
+ *
+ * <p>The optional {@code cluster} field specifies which cluster to ingest data into.
+ * If not specified or set to "local", data is ingested into the local (coordinator) cluster.
+ *
+ * @param cluster Optional cluster alias (null or "local" for local cluster)
+ * @param indexName Target index name
+ * @param inputDataType Data mode (FIXED_INTERVAL or GENERIC)
+ * @param timeConfig Time configuration for fixed interval mode
+ * @param metrics Metric data for fixed interval mode
+ * @param genericMetrics Metric data for generic mode
  */
-public record InputDataConfig(@JsonProperty("index_name") String indexName, @JsonProperty("input_data_type") InputDataType inputDataType,
-    @JsonProperty("time_config") TimeConfig timeConfig, @JsonProperty("regular_metrics") List<FixedIntervalMetricData> metrics,
-    @JsonProperty("metrics") List<MetricData> genericMetrics) {
+public record InputDataConfig(@JsonProperty("cluster") String cluster, @JsonProperty("index_name") String indexName,
+    @JsonProperty("input_data_type") InputDataType inputDataType, @JsonProperty("time_config") TimeConfig timeConfig,
+    @JsonProperty("regular_metrics") List<FixedIntervalMetricData> metrics, @JsonProperty("metrics") List<MetricData> genericMetrics) {
+
+    /**
+     * Returns the cluster alias, defaulting to "local" if not specified.
+     */
+    public String getCluster() {
+        return cluster != null ? cluster : "local";
+    }
+
+    /**
+     * Returns true if this data should be ingested into the local cluster.
+     */
+    public boolean isLocal() {
+        return cluster == null || "local".equals(cluster);
+    }
+
     /**
      * Check if this configuration is for fixed interval time series data
      */
