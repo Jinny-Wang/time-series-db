@@ -996,4 +996,164 @@ public class HistogramPercentileStageTests extends AbstractWireSerializingTestCa
         assertEquals(2.0, ((FloatSample) samples.get(0)).getValue(), 0.001);
     }
 
+    // ========== Complex Duration Format Tests ==========
+
+    /**
+     * Test complex multi-unit duration formats like "2m11.072s" and "1m5.536s".
+     * This tests the enhanced parseDuration method's ability to handle Go-style duration formats.
+     */
+    public void testComplexDurationFormats() {
+        // Test the specific failing cases mentioned in the issue
+        HistogramPercentileStage.BucketInfo bucket1 = new HistogramPercentileStage.BucketInfo("b1", "2m11.072s-infinity");
+        assertEquals(131072.0, bucket1.getLowerBound(), 0.001); // 2m + 11.072s = 120000ms + 11072ms = 131072ms
+
+        HistogramPercentileStage.BucketInfo bucket2 = new HistogramPercentileStage.BucketInfo("b2", "32.768s-1m5.536s");
+        assertEquals(32768.0, bucket2.getLowerBound(), 0.001); // 32.768s = 32768ms
+        assertEquals(65536.0, bucket2.getUpperBound(), 0.001); // 1m + 5.536s = 60000ms + 5536ms = 65536ms
+
+        // Test other multi-unit combinations
+        HistogramPercentileStage.BucketInfo bucket3 = new HistogramPercentileStage.BucketInfo("b3", "2m37s-5m10s");
+        assertEquals(157000.0, bucket3.getLowerBound(), 0.001); // 2m37s = 120000ms + 37000ms = 157000ms
+        assertEquals(310000.0, bucket3.getUpperBound(), 0.001); // 5m10s = 300000ms + 10000ms = 310000ms
+
+        // Test hour + minute combinations
+        HistogramPercentileStage.BucketInfo bucket4 = new HistogramPercentileStage.BucketInfo("b4", "1h30m-2h45m");
+        assertEquals(5400000.0, bucket4.getLowerBound(), 0.001); // 1h30m = 3600000ms + 1800000ms = 5400000ms
+        assertEquals(9900000.0, bucket4.getUpperBound(), 0.001); // 2h45m = 7200000ms + 2700000ms = 9900000ms
+    }
+
+    /**
+     * Test fractional values in multi-unit durations.
+     */
+    public void testFractionalMultiUnit() {
+        // Test fractional seconds with minutes
+        HistogramPercentileStage.BucketInfo bucket1 = new HistogramPercentileStage.BucketInfo("b1", "1m30.5s-2m45.25s");
+        assertEquals(90500.0, bucket1.getLowerBound(), 0.001); // 1m30.5s = 60000ms + 30500ms = 90500ms
+        assertEquals(165250.0, bucket1.getUpperBound(), 0.001); // 2m45.25s = 120000ms + 45250ms = 165250ms
+
+        // Test fractional minutes
+        HistogramPercentileStage.BucketInfo bucket2 = new HistogramPercentileStage.BucketInfo("b2", "1.5m-2.5m");
+        assertEquals(90000.0, bucket2.getLowerBound(), 0.001); // 1.5m = 90000ms
+        assertEquals(150000.0, bucket2.getUpperBound(), 0.001); // 2.5m = 150000ms
+
+        // Test fractional hours with minutes
+        HistogramPercentileStage.BucketInfo bucket3 = new HistogramPercentileStage.BucketInfo("b3", "1.5h30m-2h30m");
+        assertEquals(7200000.0, bucket3.getLowerBound(), 0.001); // 1.5h + 30m = 5400000ms + 1800000ms = 7200000ms
+        assertEquals(9000000.0, bucket3.getUpperBound(), 0.001); // 2h30m = 7200000ms + 1800000ms = 9000000ms
+    }
+
+    /**
+     * Test the __ → µ replacement workaround for bad data.
+     */
+    public void testWorkaroundReplacement() {
+        // Test microsecond replacement
+        HistogramPercentileStage.BucketInfo bucket1 = new HistogramPercentileStage.BucketInfo("b1", "100__s-200__s");
+        assertEquals(0.1, bucket1.getLowerBound(), 0.0001); // 100µs = 0.1ms
+        assertEquals(0.2, bucket1.getUpperBound(), 0.0001); // 200µs = 0.2ms
+
+        // Test mixed with other units
+        HistogramPercentileStage.BucketInfo bucket2 = new HistogramPercentileStage.BucketInfo("b2", "1ms100__s-5ms");
+        assertEquals(1.1, bucket2.getLowerBound(), 0.0001); // 1ms + 100µs = 1.1ms
+        assertEquals(5.0, bucket2.getUpperBound(), 0.001); // 5ms
+    }
+
+    /**
+     * Test error cases for duplicate units and invalid formats.
+     */
+    public void testDurationErrorCases() {
+        // Test duplicate units (Go-compatible behavior)
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b1", "1m2m-3m"));
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b2", "1s5s-10s"));
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b3", "1h2h-3h"));
+
+        // Test invalid units
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b4", "2m5x-10m"));
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b5", "1y-2y")); // 'y' not supported
+
+        // Test invalid characters without units
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b6", "2m5-10m"));
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b7", "2m5s10-3m"));
+
+        // Test malformed input
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b8", "2m..5s-10m"));
+        assertThrows(IllegalArgumentException.class, () -> new HistogramPercentileStage.BucketInfo("b9", "2m 5s-10m")); // space not allowed
+    }
+
+    /**
+     * Test histogram percentile calculation with complex duration bucket ranges.
+     * This ensures the enhanced parsing works end-to-end with the percentile calculation.
+     */
+    public void testHistogramWithComplexDurations() {
+        HistogramPercentileStage stage = new HistogramPercentileStage("bucketId", "bucket", List.of(50.0f));
+
+        List<TimeSeries> input = new ArrayList<>();
+        long timestamp = 1000L;
+
+        // Create buckets with complex duration ranges
+        String[] bucketRanges = { "1m30s-2m", "2m-2m11.072s", "2m11.072s-3m", "3m-5m" };
+        int[] counts = { 25, 25, 25, 25 }; // Total: 100 requests
+
+        for (int i = 0; i < bucketRanges.length; i++) {
+            ByteLabels labels = ByteLabels.fromStrings("service", "test", "bucketId", "b" + (i + 1), "bucket", bucketRanges[i]);
+
+            List<Sample> samples = List.of(new FloatSample(timestamp, counts[i]));
+            TimeSeries series = new TimeSeries(samples, labels, timestamp, timestamp, 1000L, null);
+            input.add(series);
+        }
+
+        // Execute - should not throw and should process correctly
+        List<TimeSeries> result = stage.process(input);
+
+        // Verify - should have 1 result series for P50
+        assertEquals(1, result.size());
+        TimeSeries p50Series = result.get(0);
+
+        // P50 of 100 = 50th value, falls in the 2m-2m11.072s bucket (after 25+25=50)
+        List<Sample> samples = p50Series.getSamples();
+        assertEquals(1, samples.size());
+        // Upper bound of 2m11.072s bucket is 131072ms
+        assertEquals(131072.0, ((FloatSample) samples.get(0)).getValue(), 0.001);
+    }
+
+    /**
+     * Test that value ranges like "10-20" still work through fallback mechanism.
+     * This ensures backward compatibility is preserved.
+     */
+    public void testValueRangeFallbackWithEnhancedParser() {
+        // Test numeric value ranges (should fallback from duration parsing to value parsing)
+        HistogramPercentileStage.BucketInfo bucket1 = new HistogramPercentileStage.BucketInfo("b1", "10-20");
+        assertEquals(10.0, bucket1.getLowerBound(), 0.001);
+        assertEquals(20.0, bucket1.getUpperBound(), 0.001);
+
+        HistogramPercentileStage.BucketInfo bucket2 = new HistogramPercentileStage.BucketInfo("b2", "0-100");
+        assertEquals(0.0, bucket2.getLowerBound(), 0.001);
+        assertEquals(100.0, bucket2.getUpperBound(), 0.001);
+
+        HistogramPercentileStage.BucketInfo bucket3 = new HistogramPercentileStage.BucketInfo("b3", "1.5-3.7");
+        assertEquals(1.5, bucket3.getLowerBound(), 0.001);
+        assertEquals(3.7, bucket3.getUpperBound(), 0.001);
+
+        // Test mixed scenario - histogram with both duration and value ranges
+        HistogramPercentileStage stage = new HistogramPercentileStage("bucketId", "bucket", List.of(50.0f));
+
+        List<TimeSeries> input = new ArrayList<>();
+        long timestamp = 1000L;
+
+        // Mix duration ranges and value ranges
+        String[] bucketRanges = { "10ms-50ms", "10-20", "100ms-200ms", "50-100" };
+        int[] counts = { 25, 25, 25, 25 };
+
+        for (int i = 0; i < bucketRanges.length; i++) {
+            ByteLabels labels = ByteLabels.fromStrings("metric", "mixed", "bucketId", "b" + (i + 1), "bucket", bucketRanges[i]);
+
+            List<Sample> samples = List.of(new FloatSample(timestamp, counts[i]));
+            TimeSeries series = new TimeSeries(samples, labels, timestamp, timestamp, 1000L, null);
+            input.add(series);
+        }
+
+        // Execute - should process mixed duration and value ranges correctly
+        List<TimeSeries> result = stage.process(input);
+        assertNotNull(result); // Should succeed without throwing exceptions
+    }
+
 }

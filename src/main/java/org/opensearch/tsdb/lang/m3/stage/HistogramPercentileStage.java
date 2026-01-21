@@ -24,12 +24,15 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -504,7 +507,7 @@ public class HistogramPercentileStage implements UnaryPipelineStage {
         private final String bucketRange;
         private final HistogramRange parsedRange;
         private static final Pattern DURATION_PATTERN = Pattern.compile("(-?\\d+(?:\\.\\d+)?)(ns|us|µs|ms|s|m|h|d)");
-        private static final Map<String, java.util.function.Function<Double, Duration>> unitMap = Map.of(
+        private static final Map<String, Function<Double, Duration>> unitMap = Map.of(
             "ns",
             value -> Duration.ofNanos(Math.round(value)),
             "us",
@@ -681,21 +684,67 @@ public class HistogramPercentileStage implements UnaryPipelineStage {
         }
 
         /**
-         * Parse a duration string like "1ms", "10s", "5m", "2h".
+         * Parse a duration string supporting both single-unit (e.g., "1ms", "10s") and
+         * multi-unit Go-style formats (e.g., "2m11.072s", "1h30m").
          * Supports the specific postfixes: "ns", "us"/"µs", "ms", "s", "m", "h"
          */
         public static Duration parseDuration(String durationString) throws IllegalArgumentException {
-            Matcher matcher = DURATION_PATTERN.matcher(durationString);
-            if (matcher.matches()) {
+            if (durationString == null || durationString.trim().isEmpty()) {
+                throw new IllegalArgumentException("Duration string cannot be null or empty");
+            }
+
+            // Handle the __ → µ replacement workaround for bad data
+            String cleanedDuration = durationString.replace("__", "µ");
+
+            // Find all duration components and validate for Go-compatibility
+            Matcher matcher = DURATION_PATTERN.matcher(cleanedDuration);
+            Duration total = Duration.ZERO;
+            Set<String> seenUnits = new HashSet<>(); // Track units to prevent duplicates
+            boolean hasMatches = false;
+            int lastEnd = 0;
+
+            while (matcher.find()) {
+                hasMatches = true;
+
+                // Check for gaps between matches (invalid characters)
+                if (matcher.start() > lastEnd) {
+                    String gap = cleanedDuration.substring(lastEnd, matcher.start());
+                    if (!gap.isEmpty()) {
+                        throw new IllegalArgumentException("Invalid characters '" + gap + "' in duration: " + durationString);
+                    }
+                }
+                lastEnd = matcher.end();
+
                 double value = Double.parseDouble(matcher.group(1));
                 String unit = matcher.group(2);
 
-                java.util.function.Function<Double, Duration> durationCreator = unitMap.get(unit);
-                if (durationCreator != null) {
-                    return durationCreator.apply(value);
+                // Reject duplicate units (Go-compatible behavior)
+                if (!seenUnits.add(unit)) {
+                    throw new IllegalArgumentException("Duplicate time unit '" + unit + "' in duration: " + durationString);
+                }
+
+                Function<Double, Duration> durationCreator = unitMap.get(unit);
+                if (durationCreator == null) {
+                    throw new IllegalArgumentException("Unknown time unit: " + unit);
+                }
+
+                Duration component = durationCreator.apply(value);
+                total = total.plus(component);
+            }
+
+            if (!hasMatches) {
+                throw new IllegalArgumentException("Invalid duration string format: " + durationString);
+            }
+
+            // Validate that entire string was consumed (no leftover characters at the end)
+            if (lastEnd < cleanedDuration.length()) {
+                String leftover = cleanedDuration.substring(lastEnd);
+                if (!leftover.isEmpty()) {
+                    throw new IllegalArgumentException("Invalid characters '" + leftover + "' in duration: " + durationString);
                 }
             }
-            throw new IllegalArgumentException("Invalid duration string format: " + durationString);
+
+            return total;
         }
 
     }
