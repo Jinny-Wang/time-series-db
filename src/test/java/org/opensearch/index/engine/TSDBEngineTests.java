@@ -171,6 +171,7 @@ public class TSDBEngineTests extends EngineTestCase {
                 .put("index.tsdb_engine.enabled", true)
                 .put("index.queries.cache.enabled", false)
                 .put("index.requests.cache.enable", false)
+                .put("index.tsdb_engine.max_closeable_chunks_per_chunk_range_percentage", 100)
                 .build()
         );
     }
@@ -181,6 +182,8 @@ public class TSDBEngineTests extends EngineTestCase {
      */
     private void registerDynamicSettings(IndexScopedSettings indexScopedSettings) {
         indexScopedSettings.registerSetting(TSDBPlugin.TSDB_ENGINE_COMMIT_INTERVAL);
+        indexScopedSettings.registerSetting(TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE);
+        indexScopedSettings.registerSetting(TSDBPlugin.TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE);
         indexScopedSettings.registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
         indexScopedSettings.registerSetting(TSDBPlugin.TSDB_ENGINE_RETENTION_FREQUENCY);
         indexScopedSettings.registerSetting(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME);

@@ -54,6 +54,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -68,6 +69,7 @@ public class HeadTests extends OpenSearchTestCase {
         .put(TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF.getKey(), TimeValue.timeValueMillis(8000))
         .put(TSDBPlugin.TSDB_ENGINE_SAMPLES_PER_CHUNK.getKey(), 120)
         .put(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.getKey(), Constants.Time.DEFAULT_TIME_UNIT.toString())
+        .put(TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE.getKey(), 100)
         .build();
 
     ThreadPool threadPool;
@@ -129,7 +131,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         assertEquals("Initial minTime should be 0", 0L, head.getMinTimestamp());
 
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
 
         assertEquals("minTime should be 8000 after first flush", 8000L, head.getMinTimestamp());
 
@@ -227,7 +229,7 @@ public class HeadTests extends OpenSearchTestCase {
         assertNotNull("Series with last append at seqNo 10 exists", head.getSeriesMap().getByReference(seriesWithData.stableHash()));
 
         // Two chunks were created, minSeqNo of all in-memory chunks is >0 but <9
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
         assertNull("Series with last append at seqNo 0 is removed", head.getSeriesMap().getByReference(seriesNoData.stableHash()));
         assertNotNull("Series with last append at seqNo 9 exists", head.getSeriesMap().getByReference(seriesWithData.stableHash()));
         assertEquals("One series remain in the series map", 1, head.getSeriesMap().size());
@@ -235,7 +237,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         // Simulate advancing the time, so the series with data may have it's last chunk closed
         head.updateMaxSeenTimestamp(40000L); // last chunk has range 16000-24000, this should ensure maxTime - oooCutoff is beyond that
-        long minSeqNo = head.closeHeadChunks(true).minSeqNo();
+        long minSeqNo = head.closeHeadChunks(true, 100).minSeqNo();
         assertEquals(Long.MAX_VALUE, getMinSeqNoToKeep(minSeqNo));
 
         head.close();
@@ -268,7 +270,7 @@ public class HeadTests extends OpenSearchTestCase {
             appender1.append(() -> {}, () -> {});
         }
 
-        Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(true);
+        Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(true, 100);
 
         assertEquals("7 samples were MMAPed, replay from minSeqNo + 1", 6, getMinSeqNoToKeep(indexChunksResult.minSeqNo()));
         head.close();
@@ -361,7 +363,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         // closeHeadChunks should return minSeqNo of the first failed chunk minus 1
         // First failed chunk is at index 2: [16000-24000] with minSeqNo 115
-        Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(true);
+        Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(true, 100);
         assertEquals(114, getMinSeqNoToKeep(indexChunksResult.minSeqNo())); // 115 - 1
 
         head.close();
@@ -405,7 +407,7 @@ public class HeadTests extends OpenSearchTestCase {
         doReturn(false).when(closedChunkIndexManager).addMemChunk(series, result.closableChunks().getFirst());
 
         // closeHeadChunks should handle the failure gracefully and return the first failed chunk's minSeqNo - 1
-        Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(true);
+        Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(true, 100);
         assertEquals(99, getMinSeqNoToKeep(indexChunksResult.minSeqNo())); // 100 - 1
 
         head.close();
@@ -444,7 +446,7 @@ public class HeadTests extends OpenSearchTestCase {
 
         assertEquals("Initial minTime should be 0", 0L, head.getMinTimestamp());
 
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
 
         // test when minTimestamp = maxTimestamp - oooCutoff
         assertEquals("minTime should be 9000 after first flush", 9000L, head.getMinTimestamp());
@@ -459,7 +461,7 @@ public class HeadTests extends OpenSearchTestCase {
             appender.append(() -> {}, () -> {});
         }
 
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
 
         // test when minTimestamp = openChunk.getMinTimestamp (not equal to any sample's timestamp)
         assertEquals("minTime should be 8000 after second flush", 16000L, head.getMinTimestamp());
@@ -488,7 +490,7 @@ public class HeadTests extends OpenSearchTestCase {
         head.getLiveSeriesIndex().getDirectoryReaderManager().maybeRefreshBlocking();
         assertEquals("Initial minTime should be 0", 0L, head.getMinTimestamp());
 
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
         assertEquals("After flush minTime should remain 0", 0L, head.getMinTimestamp());
 
         head.close();
@@ -1530,7 +1532,7 @@ public class HeadTests extends OpenSearchTestCase {
         assertEquals("Stub counter should be 1", 1, head.getSeriesMap().getStubSeriesCount());
 
         // Flush with allowDropEmptySeries=false should skip stub series (not delete)
-        head.closeHeadChunks(false);
+        head.closeHeadChunks(false, 100);
 
         // Stub series should still exist (skipped, not deleted)
         MemSeries afterFlush = head.getSeriesMap().getByReference(ref);
@@ -1569,7 +1571,7 @@ public class HeadTests extends OpenSearchTestCase {
         assertEquals("Stub counter should be 1", 1, head.getSeriesMap().getStubSeriesCount());
 
         // Flush with allowDropEmptySeries=true should delete orphaned stub series
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
 
         // Stub series should be deleted (orphaned after recovery)
         MemSeries afterFlush = head.getSeriesMap().getByReference(ref);
@@ -1617,7 +1619,7 @@ public class HeadTests extends OpenSearchTestCase {
         assertNotNull("Series 2 should exist", head.getSeriesMap().getByReference(series2Ref));
 
         // First flush to close chunks and establish minSeqNoToKeep
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
 
         // Series 2 should be removed after first flush (maxSeqNo=0 < minSeqNoToKeep)
         assertNull("Series 2 should be removed after first flush", head.getSeriesMap().getByReference(series2Ref));
@@ -1641,7 +1643,7 @@ public class HeadTests extends OpenSearchTestCase {
         assertEquals("Series 2 refCount should be 1 after preprocess", 1, series2.getRefCount());
 
         // Series2 (maxSeqNo=0) would be eligible for removal, but refCount > 0 should protect it
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
 
         // Series 2 should NOT be removed because it has an active reference (refCount > 0)
         assertNotNull("Series 2 should NOT be removed due to active refCount", head.getSeriesMap().getByReference(series2Ref));
@@ -2001,7 +2003,7 @@ public class HeadTests extends OpenSearchTestCase {
         }
 
         // First closeHeadChunks to close some chunks and establish minSeqNoToKeep
-        head.closeHeadChunks(true);
+        head.closeHeadChunks(true, 100);
 
         // Create a target series with low seqNo (eligible for deletion)
         Labels targetLabels = ByteLabels.fromStrings("type", "target", "id", "1");
@@ -2046,7 +2048,7 @@ public class HeadTests extends OpenSearchTestCase {
                 preprocessDoneLatch.await();
 
                 // Try to delete - should fail for this series because refCount > 0
-                head.closeHeadChunks(true);
+                head.closeHeadChunks(true, 100);
             } catch (Exception e) {
                 logger.error("Deletion thread failed", e);
             } finally {
@@ -2124,5 +2126,305 @@ public class HeadTests extends OpenSearchTestCase {
                 readerManager.release(reader);
             }
         }
+    }
+
+    /**
+     * Test rate limiting disabled (limit = -1). All closeable chunks should be closed.
+     * Setup: 3 series, 3 chunks each (9 total). First 2 chunks per series closeable (6 closeable, 3 remain open).
+     */
+    public void testRateLimitingDisabled() throws IOException, InterruptedException {
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("headTest", "headTestUid", 0),
+            defaultSettings
+        );
+
+        Head head = new Head(
+            createTempDir("testRateLimitingDisabled"),
+            new ShardId("headTest", "headTestUid", 0),
+            closedChunkIndexManager,
+            defaultSettings
+        );
+
+        Labels series1 = ByteLabels.fromStrings("series", "1");
+        Labels series2 = ByteLabels.fromStrings("series", "2");
+        Labels series3 = ByteLabels.fromStrings("series", "3");
+
+        long seqNo = 0;
+
+        // Create chunk 1 for each series - timestamps 1000-4000 (4 samples each)
+        for (int i = 1; i <= 4; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 12, chunks with minSeqNo: s1[0], s2[1], s3[2]
+
+        // Create chunk 2 for each series - timestamps 12000-15000 (4 samples each)
+        for (int i = 12; i <= 15; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 24, chunks with minSeqNo: s1[12], s2[13], s3[14]
+
+        // Create chunk 3 for each series - timestamps 24000-27000 (4 samples each)
+        for (int i = 24; i <= 27; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 36, chunks with minSeqNo: s1[24], s2[25], s3[26]
+
+        // Make first 2 chunks closeable (OOO cutoff 8000ms, maxTime 32000 makes chunks <= 24000 closeable)
+        head.updateMaxSeenTimestamp(32000L);
+
+        // Close all chunks with percentage = 100 (disabled rate limiting)
+        // Closed: 6 chunks (2 per series), Deferred: 0, Remaining open: 3 chunks (minSeqNo: 24, 25, 26)
+        Head.IndexChunksResult result = head.closeHeadChunks(true, 100);
+
+        assertEquals("Should have closed 6 chunks", 6, result.numClosedChunks());
+        assertEquals("Should have 0 deferred chunks", 0, result.deferredChunkCount());
+        assertEquals("minSeqNo should be 24 (from remaining open chunk)", 24L, result.minSeqNo());
+
+        head.close();
+        closedChunkIndexManager.close();
+    }
+
+    /**
+     * Test rate limit of 34%. Only 2 out of 6 closeable chunks closed (34% = 2 chunks closed), 4 deferred.
+     * Setup: 3 series, 3 chunks each = 9 total. First 2 chunks per series closeable (6 closeable, 3 remain open).
+     */
+    public void testRateLimitWith2CloseableChunksPerCycle() throws IOException, InterruptedException {
+        Settings customSettings = Settings.builder()
+            .put(defaultSettings)
+            .put(TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE.getKey(), 34)
+            .build();
+
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("headTest", "headTestUid", 0),
+            customSettings
+        );
+
+        Head head = new Head(
+            createTempDir("testRateLimitWith2Chunks"),
+            new ShardId("headTest", "headTestUid", 0),
+            closedChunkIndexManager,
+            customSettings
+        );
+
+        Labels series1 = ByteLabels.fromStrings("series", "1");
+        Labels series2 = ByteLabels.fromStrings("series", "2");
+        Labels series3 = ByteLabels.fromStrings("series", "3");
+
+        long seqNo = 0;
+
+        // Create chunk 1 for each series - timestamps 1000-4000 (4 samples each)
+        for (int i = 1; i <= 4; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 12, chunks with minSeqNo: s1[0], s2[1], s3[2]
+
+        // Create chunk 2 for each series - timestamps 12000-15000 (4 samples each)
+        for (int i = 12; i <= 15; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 24, chunks with minSeqNo: s1[12], s2[13], s3[14]
+
+        // Create chunk 3 for each series - timestamps 24000-27000 (4 samples each)
+        for (int i = 24; i <= 27; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 36, chunks with minSeqNo: s1[24], s2[25], s3[26]
+
+        // Make first 2 chunks closeable
+        head.updateMaxSeenTimestamp(32000L);
+
+        // Close only 2 chunks with percentage = 34 (34% of 6 = 2.04, rounds down to 2)
+        // Closeable chunks by minSeqNo: 0(s1c1), 1(s2c1), 2(s3c1), 12(s1c2), 13(s2c2), 14(s3c2)
+        // Closed: 2 chunks (0, 1), Deferred: 4 chunks (2, 12, 13, 14), Remaining: deferred + open (2,12,13,14,24,25,26)
+        // Expected minSeqNo: 2
+        Head.IndexChunksResult result = head.closeHeadChunks(true, 34);
+
+        assertEquals("Should have closed 2 chunks", 2, result.numClosedChunks());
+        assertEquals("Should have 4 deferred chunks", 4, result.deferredChunkCount());
+        assertEquals("minSeqNo should be 2 (from first deferred chunk)", 2L, result.minSeqNo());
+
+        head.close();
+        closedChunkIndexManager.close();
+    }
+
+    /**
+     * Test rate limit of 67%. Only 4 out of 6 closeable chunks closed (67% = 4 chunks closed), 2 deferred.
+     * Setup: 3 series, 3 chunks each = 9 total. First 2 chunks per series closeable (6 closeable, 3 remain open).
+     */
+    public void testRateLimitWith4CloseableChunksPerCycle() throws IOException, InterruptedException {
+        Settings customSettings = Settings.builder()
+            .put(defaultSettings)
+            .put(TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE.getKey(), 67)
+            .build();
+
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("headTest", "headTestUid", 0),
+            customSettings
+        );
+
+        Head head = new Head(
+            createTempDir("testRateLimitWith4Chunks"),
+            new ShardId("headTest", "headTestUid", 0),
+            closedChunkIndexManager,
+            customSettings
+        );
+
+        Labels series1 = ByteLabels.fromStrings("series", "1");
+        Labels series2 = ByteLabels.fromStrings("series", "2");
+        Labels series3 = ByteLabels.fromStrings("series", "3");
+
+        long seqNo = 0;
+
+        // Create chunk 1 for each series - timestamps 1000-4000 (4 samples each)
+        for (int i = 1; i <= 4; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 12, chunks with minSeqNo: s1[0], s2[1], s3[2]
+
+        // Create chunk 2 for each series - timestamps 12000-15000 (4 samples each)
+        for (int i = 12; i <= 15; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 24, chunks with minSeqNo: s1[12], s2[13], s3[14]
+
+        // Create chunk 3 for each series - timestamps 24000-27000 (4 samples each)
+        for (int i = 24; i <= 27; i++) {
+            appendSampleWithSeqNo(head, series1, i * 1000L, 1.0, seqNo++);
+            appendSampleWithSeqNo(head, series2, i * 1000L, 2.0, seqNo++);
+            appendSampleWithSeqNo(head, series3, i * 1000L, 3.0, seqNo++);
+        }
+        // seqNo = 36, chunks with minSeqNo: s1[24], s2[25], s3[26]
+
+        // Make first 2 chunks closeable
+        head.updateMaxSeenTimestamp(32000L);
+
+        // Close 4 chunks with percentage = 67 (67% of 6 = 4.02, rounds down to 4)
+        // Closeable chunks by minSeqNo: 0(s1c1), 1(s2c1), 2(s3c1), 12(s1c2), 13(s2c2), 14(s3c2)
+        // Closed: 4 chunks (0, 1, 2, 12), Deferred: 2 chunks (13, 14), Remaining: deferred + open (13,14,24,25,26)
+        // Expected minSeqNo: 13
+        Head.IndexChunksResult result = head.closeHeadChunks(true, 67);
+
+        assertEquals("Should have closed 4 chunks", 4, result.numClosedChunks());
+        assertEquals("Should have 2 deferred chunks", 2, result.deferredChunkCount());
+        assertEquals("minSeqNo should be 13 (from first deferred chunk)", 13L, result.minSeqNo());
+
+        head.close();
+        closedChunkIndexManager.close();
+    }
+
+    private void appendSampleWithSeqNo(Head head, Labels labels, long timestamp, double value, long seqNo) throws InterruptedException {
+        Head.HeadAppender appender = head.newAppender();
+        appender.preprocess(Engine.Operation.Origin.PRIMARY, seqNo, labels.stableHash(), labels, timestamp, value, () -> {});
+        appender.append(() -> {}, () -> {});
+    }
+
+    /**
+     * Tests chunk boundary-based rate limiting with dynamic percentage changes.
+     * Dynamic setting changes only take effect at the next chunk boundary crossing.
+     */
+    public void testChunkBoundaryRateLimiting() throws Exception {
+        // Create head with 10% rate limit
+        Settings rateLimitSettings = Settings.builder()
+            .put(defaultSettings)
+            .put(TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE.getKey(), 10)
+            .build();
+
+        ClosedChunkIndexManager closedChunkIndexManager = new ClosedChunkIndexManager(
+            createTempDir("metrics"),
+            new InMemoryMetadataStore(),
+            new NOOPRetention(),
+            new NoopCompaction(),
+            threadPool,
+            new ShardId("headTest", "headTestUid", 0),
+            rateLimitSettings
+        );
+
+        Head head = new Head(
+            createTempDir("testChunkBoundaryRateLimiting"),
+            new ShardId("headTest", "headTestUid", 0),
+            closedChunkIndexManager,
+            rateLimitSettings
+        );
+
+        // Create 1 series
+        Labels series1 = ByteLabels.fromStrings("job", "prometheus");
+        long seqNo = 0;
+
+        // Create 30 chunks total
+        // Chunks aligned to boundaries: [0, 12000), [12000, 24000), ..., [348000, 360000)
+        for (int chunkNum = 0; chunkNum < 30; chunkNum++) {
+            long base = chunkNum * 12000L + 1L;
+            for (int i = 0; i < 4; i++) {
+                appendSampleWithSeqNo(head, series1, base + i, 1.0, seqNo++);
+            }
+        }
+
+        // Make first 20 chunks closeable ([0, 12000) through [228000, 240000))
+        // Cutoff at 240000, so maxTime = 240000 + 20000 = 260000
+        head.updateMaxSeenTimestamp(260000L);
+
+        // First flush at 10% rate - should close 2 chunks (10% of 20 = 2)
+        Head.IndexChunksResult result1 = head.closeHeadChunks(true, 10);
+        assertEquals("First flush should close 2 chunks (10% of 20)", 2, result1.numClosedChunks());
+
+        // Now change percentage to 5% for remaining flushes in first range
+        // This change should not affect the first chunk range and will only update after chunk boundary.
+        for (int flush = 2; flush <= 10; flush++) {
+            Head.IndexChunksResult result = head.closeHeadChunks(true, 5);  // Pass 5% but should still close 2
+            assertEquals(
+                String.format(Locale.getDefault(), "Flush %d should still close 2 chunks (cached 10%% target from first boundary)", flush),
+                2,
+                result.numClosedChunks()
+            );
+        }
+
+        // Make next 10 chunks closeable ([240000, 252000) through [348000, 360000))
+        // Cutoff at 360000, so maxTime = 360000 + 20000 = 380000
+        head.updateMaxSeenTimestamp(380000L);
+
+        // Now in second range, the 5% setting should take effect
+        // 5% of 10 = 0.5, which rounds to 1
+        for (int flush = 1; flush <= 10; flush++) {
+            Head.IndexChunksResult result = head.closeHeadChunks(true, 5);
+            assertEquals(
+                String.format(Locale.getDefault(), "Flush %d in second range should close 1 chunk (5%% of 10 rounds to 1)", flush),
+                1,
+                result.numClosedChunks()
+            );
+        }
+
+        head.close();
+        closedChunkIndexManager.close();
     }
 }

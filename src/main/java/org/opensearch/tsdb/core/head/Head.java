@@ -34,6 +34,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -60,6 +61,11 @@ public class Head implements Closeable {
     private final Tags metricTags;
     private volatile long maxTime; // volatile to ensure the flush thread sees updates
     private volatile long minTime; // volatile to ensure TSDBDirectoryReader sees most recent minTime
+
+    // Closeable chunk rate limiting state: cached target closeable chunks count and last boundary processed
+    // This will be used to track when a new chunk boundary is crossed to determine total closeable chunks.
+    private volatile long lastProcessedChunkBoundary = 0;
+    private volatile int cachedChunksToProcess = 0;
 
     /**
      * Constructs a new Head instance.
@@ -322,17 +328,24 @@ public class Head implements Closeable {
      * Closes all MemChunks in the head that will not have new samples added.
      *
      * @param allowDropEmptySeries whether to allow dropping empty series after closing chunks
+     * @param maxCloseableChunksPerFlushPercentage percentage of closeable chunks to close in this flush operation. A value of 100 disables rate limiting.
      * @return the minimum sequence number of all in-memory samples after closing chunks, or Long.MAX_VALUE if all in-memory chunks are closed
      */
-    public IndexChunksResult closeHeadChunks(boolean allowDropEmptySeries) {
+    public IndexChunksResult closeHeadChunks(boolean allowDropEmptySeries, int maxCloseableChunksPerFlushPercentage) {
+        long cutoffTimestamp = getCutoffTimestamp();
         List<MemSeries> allSeries = getSeriesMap().getSeriesMap();
-        IndexChunksResult indexChunksResult = indexCloseableChunks(allSeries, allowDropEmptySeries);
+        IndexChunksResult indexChunksResult = indexCloseableChunks(
+            allSeries,
+            allowDropEmptySeries,
+            maxCloseableChunksPerFlushPercentage,
+            cutoffTimestamp
+        );
 
         // Only attempt to update minTime if there are open chunks, or we're not initializing
         if (indexChunksResult.minTimestamp != Long.MAX_VALUE || maxTime != Long.MIN_VALUE) {
             // If head contains an old timestamp beyond the out-of-order cutoff, it is guaranteed to be the minimum so use it
             // If the oldest timestamp is larger than the out-of-order cutoff, we may accept a sample as old as the cutoff, use the cutoff
-            long minTimestamp = Math.min(indexChunksResult.minTimestamp, maxTime - oooCutoffWindow);
+            long minTimestamp = Math.min(indexChunksResult.minTimestamp, cutoffTimestamp);
             if (minTime < minTimestamp) {
                 minTime = minTimestamp;
             }
@@ -359,25 +372,69 @@ public class Head implements Closeable {
         if (closedSeries > 0) {
             TSDBMetrics.incrementCounter(TSDBMetrics.ENGINE.seriesClosedTotal, closedSeries, metricTags);
         }
+        int totalCloseableChunks = indexChunksResult.numClosedChunks() + indexChunksResult.deferredChunkCount();
+        if (totalCloseableChunks > 0) {
+            TSDBMetrics.incrementCounter(TSDBMetrics.ENGINE.memChunksCloseableTotal, totalCloseableChunks, metricTags);
+        }
+        if (indexChunksResult.deferredChunkCount() > 0) {
+            TSDBMetrics.incrementCounter(TSDBMetrics.ENGINE.deferredChunkCloseCount, indexChunksResult.deferredChunkCount(), metricTags);
+        }
 
         // TODO consider returning in an incremental fashion, to avoid no-op reprocessing if the server crashes between CCI commits
         return indexChunksResult;
     }
 
     /**
-     * Indexes all closeable chunks from the given series list.
+     * Calculates the cutoff timestamp for determining which chunks are closeable.
+     * Chunks with max timestamp before this cutoff are eligible for closing.
+     *
+     * @return the cutoff timestamp (maxTime - oooCutoffWindow)
+     */
+    private long getCutoffTimestamp() {
+        return maxTime - oooCutoffWindow;
+    }
+
+    /**
+     * Calculates the most recent chunk boundary that has passed the OOO cutoff window.
+     * Since chunks are aligned to absolute time boundaries,
+     * this method determines which boundary just became closeable.
+     *
+     * @param cutoffTimestamp the cutoff timestamp for closeable chunks (maxTime - oooCutoffWindow)
+     * @return the timestamp of the last closeable chunk boundary
+     */
+    private long getLastCloseableChunkBoundary(long cutoffTimestamp) {
+        long chunkRange = appendContext.options().chunkRange();
+
+        // Find the chunk boundary that just became closeable
+        return (cutoffTimestamp / chunkRange) * chunkRange;
+    }
+
+    /**
+     * Indexes all closeable chunks from the given series list. The number of closed chunks depends on the provided rate
+     * limit value 'maxCloseableChunksPerFlushPercentage'. The target number of max closeable chunks will only be
+     * calculated based on provided percentage value on crossing new chunk boundary, and will be applied for all chunks
+     * within range. Example, if it is decided to close a maximum of 100 chunks per call after crossing chunk-boundary-1
+     * (say t + 20 min, with 20 min chunk range), 100 chunks will be attempted to close till next chunk range is reached (t + 40 min). At t + 40 min,
+     * the target number of closeable chunks is recomputed based on the new total number of closeable chunks.
      *
      * @param seriesList the list of MemSeries to process
      * @param allowDropStubSeries whether to allow deleting orphaned stub series
+     * @param maxCloseableChunksPerFlushPercentage percentage of closeable chunks to close
+     * @param cutoffTimestamp the cutoff timestamp for determining closeable chunks (maxTime - oooCutoffWindow)
      * @return the result containing closed chunks and the minimum sequence number of in-memory samples
      */
-    private IndexChunksResult indexCloseableChunks(List<MemSeries> seriesList, boolean allowDropStubSeries) {
-        long minSeqNo = Long.MAX_VALUE;
-        long minTimestamp = Long.MAX_VALUE;
-        Map<Long, Set<MemChunk>> seriesRefToClosedChunks = new HashMap<>();
-        int totalClosedChunks = 0;
-        long cutoffTimestamp = maxTime - oooCutoffWindow;
-        log.info("Closing head chunks before timestamp: {}", cutoffTimestamp);
+    private IndexChunksResult indexCloseableChunks(
+        List<MemSeries> seriesList,
+        boolean allowDropStubSeries,
+        int maxCloseableChunksPerFlushPercentage,
+        long cutoffTimestamp
+    ) {
+        log.info("Attempting to close head chunks before timestamp: {}", cutoffTimestamp);
+
+        // First pass: collect all closeable chunks AND capture min seqNo info from non-closeable chunks
+        List<CloseableChunkInfo> allCloseableChunks = new ArrayList<>();
+        long minSeqNoFromNonCloseable = Long.MAX_VALUE;
+        long minTimestampFromNonCloseable = Long.MAX_VALUE;
 
         for (MemSeries series : seriesList) {
             // Stub series have no labels and cannot be indexed.
@@ -398,49 +455,123 @@ public class Head implements Closeable {
                 continue;
             }
 
-            long seriesRef = series.getReference();
             MemSeries.ClosableChunkResult closeableChunkResult = series.getClosableChunks(cutoffTimestamp);
 
-            var addedChunks = 0;
+            // Collect closeable chunks
             for (MemChunk memChunk : closeableChunkResult.closableChunks()) {
-                try {
-                    var added = closedChunkIndexManager.addMemChunk(series, memChunk);
-                    if (!added) {
-                        // This should only happen for infrequent OOO or backfill sample ingestion since compaction
-                        // does not consider open indexes.
-                        break;
-                    }
-                    // Mark the chunk as closed after successfully adding to the index manager
-                    memChunk.setClosed(true);
-                    seriesRefToClosedChunks.computeIfAbsent(seriesRef, k -> new HashSet<>()).add(memChunk);
-                    addedChunks++;
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                allCloseableChunks.add(new CloseableChunkInfo(series, memChunk, memChunk.getMinSeqNo()));
             }
 
-            if (addedChunks == closeableChunkResult.closableChunks().size()) {
-                // If processed all chunks of a series.
-                if (closeableChunkResult.minSeqNo() < minSeqNo) {
-                    minSeqNo = closeableChunkResult.minSeqNo();
-                }
-                if (closeableChunkResult.minTimestamp() < minTimestamp) {
-                    minTimestamp = closeableChunkResult.minTimestamp();
-                }
-            } else {
-                // If processed partially e.g. due to ongoing compaction, use first failed chunk's minSeq.
-                MemChunk failedChunk = closeableChunkResult.closableChunks().get(addedChunks);
-                if (failedChunk.getMinSeqNo() < minSeqNo) {
-                    minSeqNo = failedChunk.getMinSeqNo();
-                }
-                if (failedChunk.getMinTimestamp() < minTimestamp) {
-                    minTimestamp = failedChunk.getMinTimestamp();
-                }
+            // Capture min seqNo info from non-closeable chunks
+            if (closeableChunkResult.minSeqNo() < minSeqNoFromNonCloseable) {
+                minSeqNoFromNonCloseable = closeableChunkResult.minSeqNo();
             }
-            totalClosedChunks += addedChunks;
-
+            if (closeableChunkResult.minTimestamp() < minTimestampFromNonCloseable) {
+                minTimestampFromNonCloseable = closeableChunkResult.minTimestamp();
+            }
         }
-        return new IndexChunksResult(seriesRefToClosedChunks, minSeqNo, totalClosedChunks, minTimestamp);
+
+        // Detect if we've crossed a new chunk boundary since last flush
+        long currentBoundary = getLastCloseableChunkBoundary(cutoffTimestamp);
+        boolean boundaryJustCrossed = currentBoundary > lastProcessedChunkBoundary;
+
+        // Determine how many chunks to process based on percentage and boundary crossing
+        int chunksToProcess = allCloseableChunks.size();
+        int deferredChunks = 0;
+
+        if (maxCloseableChunksPerFlushPercentage < 100 && !allCloseableChunks.isEmpty()) {
+            // Recalculate target if new chunk boundary crossed or no cached value exists
+            if (cachedChunksToProcess == 0 || boundaryJustCrossed) {
+                cachedChunksToProcess = Math.max(1, (allCloseableChunks.size() * maxCloseableChunksPerFlushPercentage) / 100);
+
+                if (boundaryJustCrossed) {
+                    log.debug(
+                        "Chunk boundary crossed (boundary timestamp: {}). Recalculated chunk close target: {} chunks per flush ({}% of {} closeable chunks)",
+                        currentBoundary,
+                        cachedChunksToProcess,
+                        maxCloseableChunksPerFlushPercentage,
+                        allCloseableChunks.size()
+                    );
+                    lastProcessedChunkBoundary = currentBoundary;
+                }
+            }
+
+            // Use cached target to determine how many chunks to process
+            chunksToProcess = Math.min(cachedChunksToProcess, allCloseableChunks.size());
+
+            if (chunksToProcess < allCloseableChunks.size()) {
+                // Sort chunks by sequence number (oldest first) when rate limiting is applied to prefer older chunks
+                allCloseableChunks.sort(Comparator.comparingLong(chunkInfo -> chunkInfo.minSeqNo));
+
+                deferredChunks = allCloseableChunks.size() - chunksToProcess;
+                log.debug(
+                    "Rate limiting chunk closing: processing {} chunks, deferring {} chunks (cached closeable target: {}, total closeable: {})",
+                    chunksToProcess,
+                    deferredChunks,
+                    cachedChunksToProcess,
+                    allCloseableChunks.size()
+                );
+            }
+        }
+
+        // Second pass: process selected chunks
+        long minSeqNo = Long.MAX_VALUE;
+        long minTimestamp = Long.MAX_VALUE;
+        Map<Long, Set<MemChunk>> seriesRefToClosedChunks = new HashMap<>();
+        int totalClosedChunks = 0;
+
+        for (int i = 0; i < chunksToProcess; i++) {
+            CloseableChunkInfo chunkInfo = allCloseableChunks.get(i);
+            try {
+                boolean added = closedChunkIndexManager.addMemChunk(chunkInfo.series, chunkInfo.chunk);
+                if (!added) {
+                    // This should only happen for infrequent OOO or backfill sample ingestion since compaction
+                    // does not consider open indexes.
+                    // Update minSeqNo/minTimestamp with this chunk since it wasn't closed
+                    if (chunkInfo.chunk.getMinSeqNo() < minSeqNo) {
+                        minSeqNo = chunkInfo.chunk.getMinSeqNo();
+                    }
+                    if (chunkInfo.chunk.getMinTimestamp() < minTimestamp) {
+                        minTimestamp = chunkInfo.chunk.getMinTimestamp();
+                    }
+                    continue;
+                }
+                // Mark the chunk as closed after successfully adding to the index manager
+                chunkInfo.chunk.setClosed(true);
+                seriesRefToClosedChunks.computeIfAbsent(chunkInfo.series.getReference(), k -> new HashSet<>()).add(chunkInfo.chunk);
+                totalClosedChunks++;
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        // Calculate final minSeqNo and minTimestamp from the following
+        // 1. Deferred closeable chunks (not processed in this flush)
+        for (int i = chunksToProcess; i < allCloseableChunks.size(); i++) {
+            CloseableChunkInfo chunkInfo = allCloseableChunks.get(i);
+            if (chunkInfo.chunk.getMinSeqNo() < minSeqNo) {
+                minSeqNo = chunkInfo.chunk.getMinSeqNo();
+            }
+            if (chunkInfo.chunk.getMinTimestamp() < minTimestamp) {
+                minTimestamp = chunkInfo.chunk.getMinTimestamp();
+            }
+        }
+
+        // 2. Non-closeable chunks
+        if (minSeqNoFromNonCloseable < minSeqNo) {
+            minSeqNo = minSeqNoFromNonCloseable;
+        }
+        if (minTimestampFromNonCloseable < minTimestamp) {
+            minTimestamp = minTimestampFromNonCloseable;
+        }
+
+        return new IndexChunksResult(seriesRefToClosedChunks, minSeqNo, totalClosedChunks, minTimestamp, deferredChunks);
+    }
+
+    /**
+     * Helper record to hold chunk information during rate-limited chunk closing.
+     */
+    private record CloseableChunkInfo(MemSeries series, MemChunk chunk, long minSeqNo) {
     }
 
     /**
@@ -450,9 +581,10 @@ public class Head implements Closeable {
      * @param minSeqNo             minimum sequence number among all remaining in-memory (non-closed) samples, or Long.MAX_VALUE if all chunks were closed
      * @param numClosedChunks      total count of MemChunks that were closed and indexed
      * @param minTimestamp         minimum timestamp among all remaining in-memory (non-closed) samples, or Long.MAX_VALUE if all chunks were closed
+     * @param deferredChunkCount   number of chunks that were closeable but deferred due to rate limiting
      */
-    public record IndexChunksResult(Map<Long, Set<MemChunk>> seriesRefToClosedChunks, long minSeqNo, int numClosedChunks,
-        long minTimestamp) {
+    public record IndexChunksResult(Map<Long, Set<MemChunk>> seriesRefToClosedChunks, long minSeqNo, int numClosedChunks, long minTimestamp,
+        int deferredChunkCount) {
     }
 
     private int dropEmptySeries(long minSeqNoToKeep) {

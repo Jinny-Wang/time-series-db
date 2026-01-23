@@ -40,11 +40,14 @@ import org.opensearch.index.seqno.SeqNoStats;
 import org.opensearch.index.seqno.SequenceNumbers;
 import org.opensearch.index.store.Store;
 import org.opensearch.index.translog.InternalTranslogManager;
+import org.opensearch.index.translog.RateLimitedTranslogDeletionPolicy;
 import org.opensearch.index.translog.Translog;
+import org.opensearch.index.translog.TranslogDeletionPolicy;
 import org.opensearch.index.translog.TranslogManager;
 import org.opensearch.index.translog.TranslogOperationHelper;
 import org.opensearch.index.translog.listener.TranslogEventListener;
 import org.opensearch.search.suggest.completion.CompletionStats;
+import org.opensearch.telemetry.metrics.tags.Tags;
 import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.core.chunk.MMappedChunksManager;
 import org.opensearch.tsdb.core.compaction.CompactionFactory;
@@ -103,6 +106,7 @@ public class TSDBEngine extends Engine {
     private final ClosedChunkIndexManager closedChunkIndexManager;
     private final IndexWriter metadataIndexWriter;
     private final SnapshotDeletionPolicy snapshotDeletionPolicy;
+    private final RateLimitedTranslogDeletionPolicy rateLimitedTranslogDeletionPolicy;
 
     // flush and commit management
     private final Lock flushLock = new ReentrantLock(); // prevent concurrent flush operations
@@ -110,7 +114,9 @@ public class TSDBEngine extends Engine {
     private final Lock segmentInfosLock = new ReentrantLock(); // protect lastCommittedSegmentInfos access
     private volatile SegmentInfos lastCommittedSegmentInfos;
     private volatile TimeValue commitInterval; // cached commit interval setting
+    private volatile int maxCloseableChunksPerChunkRangePercentage; // controls the percentage of chunks closed per chunk range
 
+    private final Tags metricTags; // tags for metrics (index name and shard ID)
     private Head head;
     private Path metricsStorePath;
     private TSDBDirectoryReaderReferenceManager tsdbReaderManager;
@@ -140,9 +146,26 @@ public class TSDBEngine extends Engine {
         super(engineConfig);
 
         this.commitInterval = TSDBPlugin.TSDB_ENGINE_COMMIT_INTERVAL.get(engineConfig.getIndexSettings().getSettings());
-        engineConfig.getIndexSettings()
-            .getScopedSettings()
-            .addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_COMMIT_INTERVAL, newInterval -> this.commitInterval = newInterval);
+        this.maxCloseableChunksPerChunkRangePercentage = TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE.get(
+            engineConfig.getIndexSettings().getSettings()
+        );
+
+        // Initialize metric tags for this shard
+        this.metricTags = Tags.create()
+            .addTag("index", engineConfig.getShardId().getIndexName())
+            .addTag("shard", (long) engineConfig.getShardId().getId());
+
+        // Initialize rate-limited translog deletion policy with metric tags
+        this.rateLimitedTranslogDeletionPolicy = new RateLimitedTranslogDeletionPolicy(
+            engineConfig.getIndexSettings().getTranslogRetentionSize().getBytes(),
+            engineConfig.getIndexSettings().getTranslogRetentionAge().getMillis(),
+            engineConfig.getIndexSettings().getTranslogRetentionTotalFiles(),
+            TSDBPlugin.TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE.get(engineConfig.getIndexSettings().getSettings()),
+            metricTags
+        );
+
+        // Register dynamic settings update consumers
+        registerDynamicSettings(engineConfig);
 
         // Initialize rate-limited lock for closeHeadChunks operations
         this.closeChunksLock = new RateLimitedLock(() -> this.commitInterval, clock);
@@ -261,10 +284,60 @@ public class TSDBEngine extends Engine {
      */
     @Override
     public IndexResult index(Index index) throws IOException {
-        // acquire readLock to indicate there is ongoing indexing operation
-        try (ReleasableLock ignored = readLock.acquire()) {
-            return innerIndex(index);
+        long startTime = System.nanoTime();
+        try {
+            // acquire readLock to indicate there is ongoing indexing operation
+            try (ReleasableLock ignored = readLock.acquire()) {
+                return innerIndex(index);
+            }
+        } finally {
+            long latencyMillis = (System.nanoTime() - startTime) / 1_000_000;
+            TSDBMetrics.recordHistogram(TSDBMetrics.ENGINE.indexLatency, latencyMillis, metricTags);
         }
+    }
+
+    /**
+     * Registers dynamic settings update consumers for configurable TSDB engine parameters.
+     * This includes commit interval, chunk closing rate limit, translog trimming rate limit,
+     * and OpenSearch core translog retention settings (size and age).
+     *
+     * @param engineConfig the engine configuration containing index settings
+     */
+    private void registerDynamicSettings(EngineConfig engineConfig) {
+        // Register commit interval updates
+        engineConfig.getIndexSettings()
+            .getScopedSettings()
+            .addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_COMMIT_INTERVAL, newInterval -> this.commitInterval = newInterval);
+
+        // Register chunk closing rate limit updates
+        engineConfig.getIndexSettings()
+            .getScopedSettings()
+            .addSettingsUpdateConsumer(
+                TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE,
+                newPercentage -> this.maxCloseableChunksPerChunkRangePercentage = newPercentage
+            );
+
+        // Register translog trimming rate limit updates
+        engineConfig.getIndexSettings()
+            .getScopedSettings()
+            .addSettingsUpdateConsumer(
+                TSDBPlugin.TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE,
+                rateLimitedTranslogDeletionPolicy::setMaxTranslogReadersToClosePercentage
+            );
+
+        // Register OpenSearch core translog retention settings
+        engineConfig.getIndexSettings()
+            .getScopedSettings()
+            .addSettingsUpdateConsumer(
+                org.opensearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING,
+                newSize -> rateLimitedTranslogDeletionPolicy.setRetentionSizeInBytes(newSize.getBytes())
+            );
+        engineConfig.getIndexSettings()
+            .getScopedSettings()
+            .addSettingsUpdateConsumer(
+                org.opensearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_AGE_SETTING,
+                newAge -> rateLimitedTranslogDeletionPolicy.setRetentionAgeInMillis(newAge.getMillis())
+            );
     }
 
     private IndexResult innerIndex(Index index) throws IOException {
@@ -662,13 +735,19 @@ public class TSDBEngine extends Engine {
                 // closeChunksLock has been acquired
                 long startNanos = System.nanoTime();
                 try {
-                    logger.debug("MMAPing head chunks");
+                    // Skip rate limiting before post-recovery refresh to close maximum chunks
+                    int closeableChunkPercentage = postRecoveryRefreshCompleted ? maxCloseableChunksPerChunkRangePercentage : 100;
+                    logger.debug(
+                        "MMAPing head chunks with percentage: {}% (postRecoveryRefreshCompleted: {})",
+                        closeableChunkPercentage,
+                        postRecoveryRefreshCompleted
+                    );
 
                     // Retrieve the processed local checkpoint before calling head.closeHeadChunks().
                     // This will be used if the returned checkpoint is Long.MAX_VALUE, indicating all chunks at that time is closed.
                     long currentProcessedCheckpoint = localCheckpointTracker.getProcessedCheckpoint();
 
-                    Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(postRecoveryRefreshCompleted);
+                    Head.IndexChunksResult indexChunksResult = head.closeHeadChunks(postRecoveryRefreshCompleted, closeableChunkPercentage);
                     long minSeqNo = indexChunksResult.minSeqNo();
                     long checkpoint = minSeqNo == Long.MAX_VALUE ? Long.MAX_VALUE : minSeqNo - 1;
 
@@ -1199,6 +1278,21 @@ public class TSDBEngine extends Engine {
      */
     protected EngineConfig getEngineConfig() {
         return engineConfig;
+    }
+
+    /**
+     * Returns a rate-limited translog deletion policy that wraps the default policy.
+     * <p>
+     * This override provides a custom deletion policy that limits the number of translog
+     * readers (generations) that can be closed in a single trim operation, helping to
+     * prevent I/O saturation and lock contention during translog trimming.
+     *
+     * @param engineConfig the engine configuration
+     * @return an instance of RateLimitedTranslogDeletionPolicy
+     */
+    @Override
+    protected TranslogDeletionPolicy getTranslogDeletionPolicy(EngineConfig engineConfig) {
+        return rateLimitedTranslogDeletionPolicy;
     }
 
     /**

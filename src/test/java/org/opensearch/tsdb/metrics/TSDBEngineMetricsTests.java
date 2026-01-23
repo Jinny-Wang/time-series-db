@@ -60,9 +60,13 @@ public class TSDBEngineMetricsTests extends OpenSearchTestCase {
         assertNotNull(metrics.memChunksExpiredTotal);
         assertNotNull(metrics.memChunksClosedTotal);
         assertNotNull(metrics.commitTotal);
+        assertNotNull(metrics.deferredChunkCloseCount);
+        assertNotNull(metrics.memChunksCloseableTotal);
+        assertNotNull(metrics.translogReadersCount);
 
-        // Verify registry calls for counters (10 counters total: 3 ingestion + 3 OOO + 3 lifecycle + commit)
-        verify(registry, times(10)).createCounter(anyString(), anyString(), anyString());
+        // Verify registry calls for counters (13 counters total: 3 ingestion + 3 OOO + 3 lifecycle + commit + deferred chunks + closeable
+        // chunks + translog readers)
+        verify(registry, times(13)).createCounter(anyString(), anyString(), anyString());
     }
 
     public void testInitializeCreatesAllHistograms() {
@@ -71,10 +75,11 @@ public class TSDBEngineMetricsTests extends OpenSearchTestCase {
         // Verify all histograms are created
         assertNotNull(metrics.closedChunkSize);
         assertNotNull(metrics.flushLatency);
+        assertNotNull(metrics.indexLatency);
         assertNotNull(metrics.refreshInterval);
 
-        // Verify registry calls for histograms (3 histograms total: chunk size, flush latency, refresh interval)
-        verify(registry, times(3)).createHistogram(anyString(), anyString(), anyString());
+        // Verify registry calls for histograms (4 histograms total: chunk size, flush latency, index latency, refresh interval)
+        verify(registry, times(4)).createHistogram(anyString(), anyString(), anyString());
     }
 
     public void testInitializeDoesNotCreateGauges() {
@@ -161,10 +166,15 @@ public class TSDBEngineMetricsTests extends OpenSearchTestCase {
         assertNull(metrics.seriesClosedTotal);
         assertNull(metrics.memChunksExpiredTotal);
         assertNull(metrics.memChunksClosedTotal);
+        assertNull(metrics.commitTotal);
+        assertNull(metrics.deferredChunkCloseCount);
+        assertNull(metrics.memChunksCloseableTotal);
+        assertNull(metrics.translogReadersCount);
 
         // Verify all histograms are reset to null
         assertNull(metrics.closedChunkSize);
         assertNull(metrics.flushLatency);
+        assertNull(metrics.indexLatency);
         assertNull(metrics.refreshInterval);
     }
 

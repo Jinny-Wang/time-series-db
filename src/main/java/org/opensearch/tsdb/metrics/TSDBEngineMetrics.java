@@ -58,11 +58,23 @@ public class TSDBEngineMetrics {
     /** Histogram for flush operation latency */
     public Histogram flushLatency;
 
+    /** Histogram for index operation latency */
+    public Histogram indexLatency;
+
     /** Histogram for NRT refresh interval (time between refreshes / new series visibility lag) */
     public Histogram refreshInterval;
 
     /** Counter for total commits */
     public Counter commitTotal;
+
+    /** Counter for total chunks deferred (chunks closeable but not closed due to rate limiting) */
+    public Counter deferredChunkCloseCount;
+
+    /** Counter for total number of chunks eligible for closing */
+    public Counter memChunksCloseableTotal;
+
+    /** Counter for total number of translog readers */
+    public Counter translogReadersCount;
 
     /**
      * Initialize engine metrics with basic counters and histograms.
@@ -131,6 +143,11 @@ public class TSDBEngineMetrics {
             TSDBMetricsConstants.FLUSH_LATENCY_DESC,
             TSDBMetricsConstants.UNIT_MILLISECONDS
         );
+        indexLatency = registry.createHistogram(
+            TSDBMetricsConstants.INDEX_LATENCY,
+            TSDBMetricsConstants.INDEX_LATENCY_DESC,
+            TSDBMetricsConstants.UNIT_MILLISECONDS
+        );
 
         // Initialize refresh/visibility metrics
         refreshInterval = registry.createHistogram(
@@ -143,6 +160,27 @@ public class TSDBEngineMetrics {
         commitTotal = registry.createCounter(
             TSDBMetricsConstants.COMMIT_TOTAL,
             TSDBMetricsConstants.COMMIT_TOTAL_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
+
+        // Initialize deferred chunk close counter
+        deferredChunkCloseCount = registry.createCounter(
+            TSDBMetricsConstants.DEFERRED_CHUNK_CLOSE_COUNT,
+            TSDBMetricsConstants.DEFERRED_CHUNK_CLOSE_COUNT_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
+
+        // Initialize closeable chunks total counter
+        memChunksCloseableTotal = registry.createCounter(
+            TSDBMetricsConstants.MEMCHUNKS_CLOSEABLE_TOTAL,
+            TSDBMetricsConstants.MEMCHUNKS_CLOSEABLE_TOTAL_DESC,
+            TSDBMetricsConstants.UNIT_COUNT
+        );
+
+        // Initialize translog readers counter
+        translogReadersCount = registry.createCounter(
+            TSDBMetricsConstants.TRANSLOG_READERS_COUNT,
+            TSDBMetricsConstants.TRANSLOG_READERS_COUNT_DESC,
             TSDBMetricsConstants.UNIT_COUNT
         );
     }
@@ -210,10 +248,18 @@ public class TSDBEngineMetrics {
         // Cleanup histograms
         closedChunkSize = null;
         flushLatency = null;
+        indexLatency = null;
         refreshInterval = null;
+        deferredChunkCloseCount = null;
 
         // Cleanup commit counter
         commitTotal = null;
+
+        // Cleanup closeable chunks counter
+        memChunksCloseableTotal = null;
+
+        // Cleanup translog metrics
+        translogReadersCount = null;
     }
 
     /**

@@ -63,8 +63,20 @@ public final class TSDBMetricsConstants {
     /** Histogram: Latency of flush operation */
     public static final String FLUSH_LATENCY = "tsdb.flush.latency";
 
+    /** Histogram: Latency of index operation */
+    public static final String INDEX_LATENCY = "tsdb.index.latency";
+
     /** Counter: Total number of commits (closeHeadChunks + commitSegmentInfos) */
     public static final String COMMIT_TOTAL = "tsdb.commit.total";
+
+    /** Counter: Total number of chunks that were closeable but deferred due to rate limiting */
+    public static final String DEFERRED_CHUNK_CLOSE_COUNT = "tsdb.memchunks.deferred_chunk_close.total";
+
+    /** Counter: Total number of chunks eligible for closing */
+    public static final String MEMCHUNKS_CLOSEABLE_TOTAL = "tsdb.memchunks.closeable.total";
+
+    /** Counter: Total number of translog readers */
+    public static final String TRANSLOG_READERS_COUNT = "tsdb.translog.readers.total";
 
     // ============================================
     // Aggregation Metrics (Query/Read Path)
@@ -213,7 +225,12 @@ public final class TSDBMetricsConstants {
     public static final String MEMCHUNKS_MINSEQ_DESC = "Minimum sequence number among open in-memory chunks (recorded on flush)";
     public static final String CLOSEDCHUNKS_SIZE_DESC = "Size histogram (bytes) of closed chunks persisted to disk";
     public static final String FLUSH_LATENCY_DESC = "Latency of flush operation";
+    public static final String INDEX_LATENCY_DESC = "Latency of index operation";
     public static final String COMMIT_TOTAL_DESC = "Total number of commits (closeHeadChunks + commitSegmentInfos)";
+    public static final String DEFERRED_CHUNK_CLOSE_COUNT_DESC =
+        "Total number of chunks that were closeable but deferred due to rate limiting";
+    public static final String MEMCHUNKS_CLOSEABLE_TOTAL_DESC = "Total number of chunks eligible for closing";
+    public static final String TRANSLOG_READERS_COUNT_DESC = "Total number of translog readers";
 
     // Aggregation Metrics
     public static final String AGGREGATION_COLLECT_LATENCY_DESC = "Latency of collect() operation per aggregation request";

@@ -71,7 +71,7 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         List<Setting<?>> settings = plugin.getSettings();
 
         assertNotNull("Settings list should not be null", settings);
-        assertThat("Should have 16 settings", settings, hasSize(16));
+        assertThat("Should have 18 settings", settings, hasSize(18));
 
         // Verify TSDB_ENGINE_ENABLED is present
         assertTrue("Should contain TSDB_ENGINE_ENABLED setting", settings.contains(TSDBPlugin.TSDB_ENGINE_ENABLED));
@@ -107,6 +107,14 @@ public class TSDBPluginTests extends OpenSearchTestCase {
         assertTrue(
             "Should contain TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION setting",
             settings.contains(TSDBPlugin.TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION)
+        );
+        assertTrue(
+            "Should contain TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE setting",
+            settings.contains(TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE)
+        );
+        assertTrue(
+            "Should contain TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE setting",
+            settings.contains(TSDBPlugin.TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE)
         );
     }
 

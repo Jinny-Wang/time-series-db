@@ -353,6 +353,47 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     );
 
     /**
+     * Setting for the maximum percentage of closeable chunks to close per chunk range boundary.
+     * This helps distribute the load of chunk closing over time instead of closing all chunks at once.
+     * <p>
+     * During flush operations, when many chunks expire simultaneously (e.g., at chunk duration boundaries), closing
+     * them all at once can cause I/O saturation. By limiting to a percentage of closeable chunks per chunk range
+     * boundary, the load is spread across multiple flush cycles. The target closeable chunk count is recalculated when
+     * a new chunk boundary is crossed. Dynamic updates also only reflect from next chunk boundary.
+     * <p>
+     * Value is a percentage (1-100). Set to 100 to disable rate limiting (close all closeable chunks).
+     * Default is 10 (close 10% of closeable chunks per chunk range).
+     */
+    public static final Setting<Integer> TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE = Setting.intSetting(
+        "index.tsdb_engine.max_closeable_chunks_per_chunk_range_percentage",
+        10,
+        1,
+        100,
+        Setting.Property.IndexScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Setting for the maximum percentage of translog readers to close during translog trimming.
+     * This helps distribute the load of translog trimming over time instead of trimming all generations at once.
+     * <p>
+     * When many translog generations need to be trimmed simultaneously, deleting all of them at once
+     * can cause I/O saturation and lock contention, impact indexing performance. By limiting the percentage of readers
+     * closed per trim operation, the load is spread across multiple trim cycles.
+     * <p>
+     * Value is a percentage (1-100). Set to 100 to disable rate limiting (trim all eligible generations).
+     * Default is 2% of translog readers per trim operation.
+     */
+    public static final Setting<Integer> TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE = Setting.intSetting(
+        "index.tsdb_engine.max_translog_readers_to_close_percentage",
+        2,
+        1,
+        100,
+        Setting.Property.IndexScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Setting for the maximum size of the wildcard query cache( i.e., how many compiled wildcard automaton
      * queries are cached). Under the hood, it is using opensearch default cache and its max weight to set
      * the size with each complied wildcard query weighted as 1.
@@ -460,6 +501,8 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             TSDB_ENGINE_OOO_CUTOFF,
             TSDB_ENGINE_LABEL_STORAGE_TYPE,
             TSDB_ENGINE_COMMIT_INTERVAL,
+            TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE,
+            TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE,
             TSDB_ENGINE_WILDCARD_QUERY_CACHE_MAX_SIZE,
             TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER,
             TSDB_ENGINE_FORCE_NO_PUSHDOWN,
