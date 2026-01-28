@@ -56,6 +56,7 @@ import org.opensearch.tsdb.query.search.TimeRangePruningQueryBuilder;
 import org.opensearch.tsdb.query.aggregator.InternalTimeSeries;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesCoordinatorAggregationBuilder;
 import org.opensearch.tsdb.query.aggregator.TimeSeriesUnfoldAggregationBuilder;
+import org.opensearch.tsdb.query.rest.RemoteIndexSettingsCache;
 import org.opensearch.tsdb.query.rest.RestM3QLAction;
 import org.opensearch.tsdb.query.rest.RestPromQLAction;
 import org.opensearch.watcher.ResourceWatcherService;
@@ -98,6 +99,12 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
 
     // Telemetry
     private volatile Optional<MetricsRegistry> metricsRegistry = Optional.empty();
+
+    // Cluster service for REST handlers
+    private volatile ClusterService clusterService;
+
+    // Singleton cache for remote index settings
+    private volatile RemoteIndexSettingsCache remoteIndexSettingsCache;
 
     /**
      * This setting identifies if the tsdb engine is enabled for the index.
@@ -314,7 +321,8 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             try {
                 TimeUnit unit = TimeUnit.valueOf(value);
                 if (unit != TimeUnit.MILLISECONDS) {
-                    throw new IllegalArgumentException(); // TODO: support additional time units when properly handled
+                    // TODO: support additional time units when properly handled
+                    throw new IllegalArgumentException();
 
                 }
             } catch (IllegalArgumentException e) {
@@ -445,6 +453,49 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     );
 
     /**
+     * Setting for the default step size (query resolution) for M3QL queries.
+     * This defines the default time interval between data points in query results.
+     * Can be overridden by the 'step' parameter in individual M3QL queries.
+     * <p>
+     * Default is 10 seconds (10000ms). This is used when the 'step' parameter is not
+     * specified in the M3QL query request.
+     */
+
+    public static final Setting<TimeValue> TSDB_ENGINE_DEFAULT_STEP = Setting.positiveTimeSetting(
+        "index.tsdb_engine.lang.m3.default_step_size",
+        TimeValue.timeValueSeconds(10),
+        Setting.Property.IndexScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * TTL for remote index settings cache. Controls how long cached remote index
+     * settings (e.g., step size) are kept before being evicted.
+     * Default is 2 hours. Minimum is 1 minute.
+     * Note : the shorter the TTL, the more frequently the cache will be invalidated.
+     */
+    public static final Setting<TimeValue> TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_TTL = Setting.timeSetting(
+        "tsdb_engine.remote_index_settings.cache.ttl",
+        TimeValue.timeValueHours(2),  // default: 2 hours
+        TimeValue.timeValueMinutes(1), // minimum: 1 minute
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
+     * Maximum size for remote index settings cache. Controls how many unique
+     * (cluster, index) pairs can be cached before eviction occurs.
+     * Default is 1000 entries. Minimum is 100 to ensure reasonable cache effectiveness.
+     */
+    public static final Setting<Integer> TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_MAX_SIZE = Setting.intSetting(
+        "tsdb_engine.remote_index_settings.cache.max_size",
+        1_000,  // default: 1000 entries
+        100,    // minimum: 100 entries
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
+    );
+
+    /**
      * Default constructor
      */
     public TSDBPlugin() {}
@@ -469,6 +520,26 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         Tracer tracer,
         MetricsRegistry metricsRegistry
     ) {
+        // Store cluster service for use in REST handlers
+        this.clusterService = clusterService;
+
+        // Create singleton RemoteIndexSettingsCache with configured TTL and max size
+        TimeValue cacheTtl = TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_TTL.get(environment.settings());
+        int cacheMaxSize = TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_MAX_SIZE.get(environment.settings());
+        this.remoteIndexSettingsCache = new RemoteIndexSettingsCache(client, cacheTtl, cacheMaxSize);
+
+        // Register a single listener for both cache settings to ensure atomic updates
+        // This prevents race conditions when both settings are updated simultaneously
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(
+                TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_TTL,
+                TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_MAX_SIZE,
+                (newTtl, newMaxSize) -> {
+                    remoteIndexSettingsCache.updateCacheSettings(newTtl, newMaxSize);
+                    logger.info("Remote index settings cache updated: TTL={}, maxSize={}", newTtl, newMaxSize);
+                }
+            );
+
         if (metricsRegistry != null) {
             this.metricsRegistry = Optional.of(metricsRegistry);
             List<TSDBMetrics.MetricsInitializer> metricInitializers = new ArrayList<>(M3QLMetrics.getMetricsInitializers());
@@ -506,7 +577,10 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             TSDB_ENGINE_WILDCARD_QUERY_CACHE_MAX_SIZE,
             TSDB_ENGINE_WILDCARD_QUERY_CACHE_EXPIRE_AFTER,
             TSDB_ENGINE_FORCE_NO_PUSHDOWN,
-            TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION
+            TSDB_ENGINE_ENABLE_INTERNAL_AGG_CHUNK_COMPRESSION,
+            TSDB_ENGINE_DEFAULT_STEP,
+            TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_TTL,
+            TSDB_ENGINE_REMOTE_INDEX_SETTINGS_CACHE_MAX_SIZE
         );
     }
 
@@ -548,9 +622,35 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     @Override
     public Optional<EngineFactory> getEngineFactory(IndexSettings indexSettings) {
         if (TSDB_ENGINE_ENABLED.get(indexSettings.getSettings())) {
+            // Validate that required settings are explicitly configured for TSDB indexes
+            // TODO: uncomment this after step size index settings is deployed to all the clusters
+            // validateRequiredSettings(indexSettings);
             return Optional.of(new TSDBEngineFactory());
         }
         return Optional.empty();
+    }
+
+    /**
+     * Validates that required settings are explicitly configured for TSDB indexes.
+     * This ensures critical settings like step size are not using default values.
+     *
+     * @param indexSettings the index settings to validate
+     * @throws IllegalArgumentException if a required setting is not explicitly configured
+     */
+    private void validateRequiredSettings(IndexSettings indexSettings) {
+        Settings settings = indexSettings.getSettings();
+
+        // Check if the step size setting is explicitly configured (not using default)
+        if (!settings.hasValue(TSDB_ENGINE_DEFAULT_STEP.getKey())) {
+            throw new IllegalArgumentException(
+                String.format(
+                    java.util.Locale.ROOT,
+                    "Setting [%s] is required for TSDB indexes but not configured. "
+                        + "Please explicitly set this value when creating the index.",
+                    TSDB_ENGINE_DEFAULT_STEP.getKey()
+                )
+            );
+        }
     }
 
     @Override
@@ -563,7 +663,10 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         IndexNameExpressionResolver indexNameExpressionResolver,
         Supplier<DiscoveryNodes> nodesInCluster
     ) {
-        return List.of(new RestM3QLAction(clusterSettings), new RestPromQLAction(clusterSettings));
+        return List.of(
+            new RestM3QLAction(clusterSettings, clusterService, indexNameExpressionResolver, remoteIndexSettingsCache),
+            new RestPromQLAction(clusterSettings)
+        );
     }
 
     @Override
@@ -620,5 +723,21 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             "index.tsdb_engine.thread_pool." + MGMT_THREAD_POOL_NAME
         );
         return List.of(executorBuilder);
+    }
+
+    /**
+     * Called when the plugin is closed during node shutdown or plugin reload.
+     * Cleans up the global static cache to prevent stale entries from persisting
+     * across plugin lifecycle events.
+     */
+    @Override
+    public void close() {
+        logger.info("Shutting down TSDBPlugin and clearing global caches");
+
+        // Clear the static cache to prevent stale entries across plugin reloads
+        RemoteIndexSettingsCache.clearGlobalCache();
+
+        // Cleanup metrics
+        TSDBMetrics.cleanup();
     }
 }
