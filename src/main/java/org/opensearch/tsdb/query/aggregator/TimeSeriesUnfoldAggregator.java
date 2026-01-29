@@ -11,6 +11,7 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.core.common.breaker.CircuitBreakingException;
 import org.opensearch.search.aggregations.Aggregator;
 import org.opensearch.search.aggregations.AggregatorFactories;
 import org.opensearch.search.aggregations.CardinalityUpperBound;
@@ -158,6 +159,14 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
     }
 
     /**
+     * Expose addCircuitBreakerBytes for testing purposes.
+     * Package-private for testing.
+     */
+    void addCircuitBreakerBytesForTesting(long bytes) {
+        addCircuitBreakerBytes(bytes);
+    }
+
+    /**
      * Track memory allocation with circuit breaker.
      * This method adds the specified bytes to the circuit breaker and tracks the total allocated.
      * Logs warnings if allocation exceeds thresholds for observability.
@@ -166,23 +175,79 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
      */
     private void addCircuitBreakerBytes(long bytes) {
         if (bytes > 0) {
-            addRequestCircuitBreakerBytes(bytes);
-            circuitBreakerBytes += bytes;
+            try {
+                addRequestCircuitBreakerBytes(bytes);
+                circuitBreakerBytes += bytes;
 
-            // Log at DEBUG level for normal tracking
-            if (logger.isDebugEnabled()) {
-                logger.debug("Circuit breaker allocation: +{} bytes, total={} bytes, aggregator={}", bytes, circuitBreakerBytes, name());
-            }
+                // Log at DEBUG level for normal tracking
+                if (logger.isDebugEnabled()) {
+                    logger.debug(
+                        "Circuit breaker allocation: +{} bytes, total={} bytes, aggregator={}",
+                        bytes,
+                        circuitBreakerBytes,
+                        name()
+                    );
+                }
 
-            // Log at WARN level if total allocation exceeds threshold (potential memory issue)
-            if (circuitBreakerBytes > circuitBreakerWarnThreshold) {
-                logger.warn(
-                    "High circuit breaker usage in aggregator '{}': {} bytes ({} MB). "
-                        + "This may indicate high cardinality data or memory leak.",
+                // Log at WARN level if total allocation exceeds threshold (potential memory issue)
+                if (circuitBreakerBytes > circuitBreakerWarnThreshold) {
+                    logger.warn(
+                        "High circuit breaker usage in aggregator '{}': {} bytes ({} MB). "
+                            + "This may indicate high cardinality data or memory leak.",
+                        name(),
+                        circuitBreakerBytes,
+                        circuitBreakerBytes / (1024 * 1024)
+                    );
+                }
+            } catch (CircuitBreakingException e) {
+                // Try to get the original query source from SearchContext
+                String queryInfo = "unavailable";
+                try {
+                    if (context.request() != null && context.request().source() != null) {
+                        // Try to get the original OpenSearch DSL query
+                        queryInfo = context.request().source().toString();
+                    } else if (context.query() != null) {
+                        // Fallback to Lucene query representation
+                        queryInfo = context.query().toString();
+                    }
+                } catch (Exception ex) {
+                    // If we can't get the query source, use Lucene query as fallback
+                    queryInfo = context.query() != null ? context.query().toString() : "null";
+                }
+
+                // Log detailed information about the query that was killed
+                logger.error(
+                    "Circuit breaker tripped - Query killed by circuit breaker. "
+                        + "Aggregation: [{}], "
+                        + "Query: {}, "
+                        + "Attempted allocation: {} bytes ({} MB), "
+                        + "Total allocated by this aggregation: {} bytes ({} MB), "
+                        + "Time range: [{} - {}], "
+                        + "Step: {}, "
+                        + "Pipeline stages: {}, "
+                        + "Circuit breaker limit: {} bytes ({} MB), "
+                        + "Reason: {}",
                     name(),
+                    queryInfo,
+                    bytes,
+                    bytes / (1024.0 * 1024.0),
                     circuitBreakerBytes,
-                    circuitBreakerBytes / (1024 * 1024)
+                    circuitBreakerBytes / (1024.0 * 1024.0),
+                    minTimestamp,
+                    maxTimestamp,
+                    step,
+                    stages != null ? stages.size() + " stages" : "no stages",
+                    e.getByteLimit(),
+                    e.getByteLimit() / (1024.0 * 1024.0),
+                    e.getMessage()
                 );
+
+                // Increment circuit breaker trips counter
+                // Note: incrementCounter handles the isInitialized() check internally
+                TSDBMetrics.incrementCounter(TSDBMetrics.AGGREGATION.circuitBreakerTrips, 1);
+
+                // Re-throw the exception to fail the query
+                throw e;
             }
         }
     }
@@ -227,6 +292,16 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
         // Calculate theoretical maximum aligned timestamp
         // This is the largest timestamp aligned to (minTimestamp + N * step) that is < maxTimestamp
         this.theoreticalMaxTimestamp = TimeSeries.calculateAlignedMaxTimestamp(minTimestamp, maxTimestamp, step);
+    }
+
+    /**
+     * Get the circuit breaker warning threshold.
+     * Package-private for testing.
+     *
+     * @return the circuit breaker warning threshold in bytes
+     */
+    long getCircuitBreakerWarnThreshold() {
+        return circuitBreakerWarnThreshold;
     }
 
     @Override
