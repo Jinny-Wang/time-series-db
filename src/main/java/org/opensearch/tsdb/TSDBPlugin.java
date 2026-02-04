@@ -716,8 +716,9 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
     @Override
     public Optional<EngineFactory> getEngineFactory(IndexSettings indexSettings) {
         if (TSDB_ENGINE_ENABLED.get(indexSettings.getSettings())) {
-            // Validate that required settings are explicitly configured for TSDB indexes
-            validateRequiredSettings(indexSettings);
+            // Validate that required settings are explicitly configured for M3 indexes
+            // TODO : tie the whole validation logic to engine variant and only run it for M3 engine
+            validateRequiredSettingsForM3Index(indexSettings);
             return Optional.of(new TSDBEngineFactory());
         }
         return Optional.empty();
@@ -730,7 +731,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
      * @param indexSettings the index settings to validate
      * @throws IllegalArgumentException if a required setting is not explicitly configured
      */
-    private void validateRequiredSettings(IndexSettings indexSettings) {
+    private void validateRequiredSettingsForM3Index(IndexSettings indexSettings) {
         Settings settings = indexSettings.getSettings();
 
         // Check if the step size setting is explicitly configured (not using default)
