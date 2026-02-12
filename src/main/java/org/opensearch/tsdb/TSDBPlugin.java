@@ -830,7 +830,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             settings,
             MGMT_THREAD_POOL_NAME,
             1,
-            1,
+            100,
             "index.tsdb_engine.thread_pool." + MGMT_THREAD_POOL_NAME
         );
         return List.of(executorBuilder);
