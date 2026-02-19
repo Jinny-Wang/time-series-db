@@ -12,10 +12,14 @@ import org.apache.logging.log4j.Logger;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.tsdb.TSDBPlugin;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.TimeUnit;
+
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
 
 /**
  * Factory class for creating compaction strategy instances based on index settings.
@@ -55,21 +59,91 @@ public class CompactionFactory {
 
     /**
      * Creates a compaction strategy instance based on the provided index settings.
+     * Returns a delegating compaction that updates when dynamic settings change
+     * (compaction type, force-merge settings, or frequency).
      *
      * @param indexSettings the index settings containing compaction and retention configuration
      * @return a Compaction instance configured according to the index settings
      */
     public static Compaction create(IndexSettings indexSettings) {
-        var compaction = getCompactionFor(indexSettings);
+        Compaction initial = getCompactionFor(indexSettings);
+        DelegatingCompaction delegating = new DelegatingCompaction(initial);
+
+        indexSettings.getScopedSettings().addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE, newType -> {
+            logger.info("Updating compaction type to: {}", newType);
+            delegating.setCompaction(getCompactionFor(indexSettings, newType));
+        });
         indexSettings.getScopedSettings().addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY, newFrequency -> {
             logger.info("Updating compaction frequency to: {}", newFrequency);
-            compaction.setFrequency(newFrequency.getMillis());
+            delegating.setFrequency(newFrequency.getMillis());
         });
-        return compaction;
+        indexSettings.getScopedSettings()
+            .addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE, newMaxSegments -> {
+                logger.info("Updating force merge max segments after merge to: {}", newMaxSegments);
+                delegating.setCompaction(getCompactionFor(indexSettings));
+            });
+        indexSettings.getScopedSettings()
+            .addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT, newMinSegments -> {
+                logger.info("Updating force merge min segment count to: {}", newMinSegments);
+                delegating.setCompaction(getCompactionFor(indexSettings));
+            });
+
+        return delegating;
+    }
+
+    /**
+     * Wrapper that delegates to the current compaction and allows swapping the delegate
+     * when dynamic settings (type or force-merge config) change.
+     */
+    private static class DelegatingCompaction implements Compaction {
+        private final AtomicReference<Compaction> current;
+
+        DelegatingCompaction(Compaction initial) {
+            this.current = new AtomicReference<>(initial);
+        }
+
+        void setCompaction(Compaction compaction) {
+            this.current.set(compaction);
+        }
+
+        @Override
+        public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
+            return current.get().plan(indexes);
+        }
+
+        @Override
+        public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
+            current.get().compact(sources, dest);
+        }
+
+        @Override
+        public boolean isInPlaceCompaction() {
+            return current.get().isInPlaceCompaction();
+        }
+
+        @Override
+        public long getFrequency() {
+            return current.get().getFrequency();
+        }
+
+        @Override
+        public void setFrequency(long frequency) {
+            current.get().setFrequency(frequency);
+        }
     }
 
     private static Compaction getCompactionFor(IndexSettings indexSettings) {
-        CompactionType compactionType = CompactionType.from(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.get(indexSettings.getSettings()));
+        return getCompactionFor(indexSettings, null);
+    }
+
+    /**
+     * Creates a compaction for the given index settings, optionally using an override compaction type
+     * (e.g. when a settings update consumer receives the new type before IndexSettings is updated).
+     */
+    private static Compaction getCompactionFor(IndexSettings indexSettings, String compactionTypeOverride) {
+        CompactionType compactionType = compactionTypeOverride != null
+            ? CompactionType.from(compactionTypeOverride)
+            : CompactionType.from(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.get(indexSettings.getSettings()));
 
         // Read common settings used by multiple compaction types
         long frequency = TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.get(indexSettings.getSettings()).getMillis();

@@ -9,11 +9,13 @@ package org.opensearch.tsdb.core.compaction;
 
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.tsdb.TSDBPlugin;
 
 import java.time.Duration;
+import java.util.Collections;
 
 public class CompactionFactoryTests extends OpenSearchTestCase {
 
@@ -461,5 +463,178 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
         assertEquals(CompactionFactory.CompactionType.Invalid, CompactionFactory.CompactionType.from("InvalidType"));
         assertEquals(CompactionFactory.CompactionType.Invalid, CompactionFactory.CompactionType.from(""));
         assertEquals(CompactionFactory.CompactionType.Invalid, CompactionFactory.CompactionType.from("random"));
+    }
+
+    /**
+     * Registers all dynamic settings that CompactionFactory listens to so that
+     * updateIndexMetadata() triggers the update consumers.
+     */
+    private void registerCompactionDynamicSettings(IndexSettings indexSettings) {
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE);
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE);
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT);
+    }
+
+    /**
+     * Test that changing index.tsdb_engine.compaction.type dynamically updates the compaction strategy.
+     * Starts with SizeTieredCompaction, switches to ForceMergeCompaction, then to Noop, and verifies
+     * behavior via the Compaction interface (isInPlaceCompaction, getFrequency, plan).
+     */
+    public void testDynamicCompactionTypeChange() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "SizeTieredCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "10m")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+
+        // Initially SizeTieredCompaction: not in-place, frequency 10m
+        assertFalse(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(10).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+
+        // Change to ForceMergeCompaction
+        Settings forceMergeSettings = Settings.builder()
+            .put(settings)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 2)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 1)
+            .build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata())
+                .settings(forceMergeSettings)
+                .numberOfShards(1)
+                .numberOfReplicas(0)
+                .build()
+        );
+
+        assertTrue("After switching to ForceMergeCompaction, compaction should be in-place", compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(10).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+
+        // Change to Noop
+        Settings noopSettings = Settings.builder().put(settings).put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "Noop").build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(noopSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        assertFalse("Noop is not in-place", compaction.isInPlaceCompaction());
+        assertEquals("Noop returns Long.MAX_VALUE for frequency", Long.MAX_VALUE, compaction.getFrequency());
+        assertTrue("Noop always returns empty plan", compaction.plan(Collections.emptyList()).isEmpty());
+    }
+
+    /**
+     * Test that changing index.tsdb_engine.compaction.force_merge.max_segments_after_merge dynamically
+     * updates the ForceMergeCompaction configuration (delegate is replaced with new config).
+     */
+    public void testDynamicForceMergeMaxSegmentsAfterMergeChange() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "15m")
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 3)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 1)
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(15).millis(), compaction.getFrequency());
+
+        // Update max_segments_after_merge from 1 to 2 (must remain <= min_segment_count 3)
+        Settings updatedSettings = Settings.builder()
+            .put(settings)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 2)
+            .build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(updatedSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        // Compaction should still be ForceMerge and work correctly (delegate was replaced with new config)
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(15).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+    }
+
+    /**
+     * Test that changing index.tsdb_engine.compaction.force_merge.min_segment_count dynamically
+     * updates the ForceMergeCompaction configuration.
+     */
+    public void testDynamicForceMergeMinSegmentCountChange() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "20m")
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 2)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 1)
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(20).millis(), compaction.getFrequency());
+
+        // Update min_segment_count from 2 to 5 (max_segments_after_merge 1 is still valid)
+        Settings updatedSettings = Settings.builder()
+            .put(settings)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 5)
+            .build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(updatedSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(20).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+    }
+
+    /**
+     * Test that changing compaction frequency dynamically still updates the current compaction
+     * when using the delegating compaction (same reference, updated behavior).
+     */
+    public void testDynamicCompactionFrequencyChangeWithDelegatingCompaction() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "5m")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+        assertEquals(TimeValue.timeValueMinutes(5).millis(), compaction.getFrequency());
+
+        Settings updatedSettings = Settings.builder().put(settings).put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "1h").build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(updatedSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        assertEquals("Frequency should be updated via settings listener", TimeValue.timeValueHours(1).millis(), compaction.getFrequency());
     }
 }

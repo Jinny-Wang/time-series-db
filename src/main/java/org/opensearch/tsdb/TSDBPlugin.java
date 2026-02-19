@@ -183,7 +183,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         "index.tsdb_engine.compaction.type",
         "SizeTieredCompaction",
         Setting.Property.IndexScope,
-        Setting.Property.Final
+        Setting.Property.Dynamic
     );
 
     public static final Setting<TimeValue> TSDB_ENGINE_COMPACTION_FREQUENCY = Setting.timeSetting(
@@ -199,7 +199,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
         2,  // Default: only force merge indexes with 2+ segments
         1,  // Minimum: at least 1 segment required
         Setting.Property.IndexScope,
-        Setting.Property.Final
+        Setting.Property.Dynamic
     );
 
     /**
@@ -247,7 +247,7 @@ public class TSDBPlugin extends Plugin implements SearchPlugin, EnginePlugin, Ac
             }
         },
         Setting.Property.IndexScope,
-        Setting.Property.Final
+        Setting.Property.Dynamic
     );
 
     /**
