@@ -100,7 +100,10 @@ public class TSDBRecoveryTests extends OpenSearchIndexLevelReplicationTestCase {
         // Register dynamic settings that are consumed by a settings updater
         IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_COMMIT_INTERVAL);
         IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_RETENTION_FREQUENCY);
+        IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE);
         IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT);
+        IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE);
         IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME);
         IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_MAX_CLOSEABLE_CHUNKS_PER_CHUNK_RANGE_PERCENTAGE);
         IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.registerSetting(TSDBPlugin.TSDB_ENGINE_MAX_TRANSLOG_READERS_TO_CLOSE_PERCENTAGE);

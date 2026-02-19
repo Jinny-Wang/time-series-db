@@ -94,8 +94,9 @@ public class CompactionFactory {
     /**
      * Wrapper that delegates to the current compaction and allows swapping the delegate
      * when dynamic settings (type or force-merge config) change.
+     * Package-private for tests that need to assert on the underlying compaction type.
      */
-    private static class DelegatingCompaction implements Compaction {
+    static class DelegatingCompaction implements Compaction {
         private final AtomicReference<Compaction> current;
 
         DelegatingCompaction(Compaction initial) {
@@ -104,6 +105,11 @@ public class CompactionFactory {
 
         void setCompaction(Compaction compaction) {
             this.current.set(compaction);
+        }
+
+        /** Returns the current compaction delegate. Used by tests to assert on concrete type. */
+        Compaction getCurrent() {
+            return current.get();
         }
 
         @Override
