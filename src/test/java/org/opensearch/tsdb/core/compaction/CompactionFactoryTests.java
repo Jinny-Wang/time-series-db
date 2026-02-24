@@ -9,13 +9,29 @@ package org.opensearch.tsdb.core.compaction;
 
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.test.OpenSearchTestCase;
 import org.opensearch.tsdb.TSDBPlugin;
+import org.opensearch.tsdb.core.index.closed.ClosedChunkIndex;
 
+import java.io.IOException;
 import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.mockito.Mockito.mock;
 
 public class CompactionFactoryTests extends OpenSearchTestCase {
+
+    /** Returns the underlying compaction when the given compaction is a DelegatingCompaction, otherwise returns the compaction itself. */
+    private static Compaction unwrap(Compaction c) {
+        if (c instanceof CompactionFactory.DelegatingCompaction) {
+            return ((CompactionFactory.DelegatingCompaction) c).getCurrent();
+        }
+        return c;
+    }
 
     /**
      * Test create with SizeTieredCompaction type and short retention time (10 hours)
@@ -32,11 +48,11 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
-        assertArrayEquals(new Duration[] {}, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(new Duration[] {}, ((SizeTieredCompaction) unwrap(compaction)).getTiers());
         assertNotNull(compaction);
     }
 
@@ -56,11 +72,14 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
-        assertArrayEquals(new Duration[] { Duration.ofHours(2), Duration.ofHours(6) }, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(
+            new Duration[] { Duration.ofHours(2), Duration.ofHours(6) },
+            ((SizeTieredCompaction) unwrap(compaction)).getTiers()
+        );
         assertNotNull(compaction);
     }
 
@@ -80,9 +99,9 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
         var expectedTiers = new Duration[] {
             Duration.ofHours(2),
@@ -90,7 +109,7 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Duration.ofHours(18),
             Duration.ofHours(54),
             Duration.ofHours(162) };
-        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) unwrap(compaction)).getTiers());
         assertNotNull(compaction);
     }
 
@@ -110,9 +129,9 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
         var expectedTiers = new Duration[] {
             Duration.ofHours(2),
@@ -122,7 +141,7 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Duration.ofHours(162),
             Duration.ofHours(486),
             Duration.ofHours(744) };
-        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) unwrap(compaction)).getTiers());
         assertNotNull(compaction);
     }
 
@@ -142,11 +161,11 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
-        assertArrayEquals(new Duration[] {}, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(new Duration[] {}, ((SizeTieredCompaction) unwrap(compaction)).getTiers());
         assertNotNull(compaction);
     }
 
@@ -164,12 +183,12 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
         var expectedTiers = new Duration[] { Duration.ofHours(2), Duration.ofHours(6), };
-        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) unwrap(compaction)).getTiers());
         assertNotNull(compaction);
     }
 
@@ -188,10 +207,10 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
         assertNotNull(compaction);
-        assertTrue(compaction instanceof NoopCompaction);
+        assertTrue(unwrap(compaction) instanceof NoopCompaction);
     }
 
     /**
@@ -227,7 +246,7 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         assertThrows(IllegalArgumentException.class, () -> CompactionFactory.create(indexSettings));
     }
 
@@ -246,7 +265,7 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, () -> CompactionFactory.create(indexSettings));
         assertEquals(
             "failed to parse value [30s] for setting [index.tsdb_engine.compaction.frequency], must be >= [1m]",
@@ -270,11 +289,11 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
         assertEquals(Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
         assertNotNull(compaction);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
     }
 
     /**
@@ -294,12 +313,12 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(2).toMillis(), compaction.getFrequency());
         var expectedTiers = new Duration[] { Duration.ofHours(2), Duration.ofHours(6), Duration.ofHours(18), };
-        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) unwrap(compaction)).getTiers());
         assertNotNull(compaction);
     }
 
@@ -317,13 +336,13 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
         );
 
         // Register the dynamic setting before creating the compaction
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
 
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue(compaction instanceof SizeTieredCompaction);
+        assertTrue(unwrap(compaction) instanceof SizeTieredCompaction);
         assertEquals(Duration.ofMinutes(5).toMillis(), compaction.getFrequency());
         var expectedTiers = new Duration[] { Duration.ofHours(2), Duration.ofHours(6), Duration.ofHours(18) };
-        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) compaction).getTiers());
+        assertArrayEquals(expectedTiers, ((SizeTieredCompaction) unwrap(compaction)).getTiers());
         assertNotNull(compaction);
 
         // Update the frequency dynamically
@@ -355,10 +374,10 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
         assertNotNull(compaction);
-        assertTrue("Should create ForceMergeCompaction", compaction instanceof ForceMergeCompaction);
+        assertTrue("Should create ForceMergeCompaction", unwrap(compaction) instanceof ForceMergeCompaction);
         assertEquals("Default frequency should be 15 minutes", Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
         assertTrue("ForceMergeCompaction should be in-place", compaction.isInPlaceCompaction());
     }
@@ -379,10 +398,10 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
         assertNotNull(compaction);
-        assertTrue("Should create ForceMergeCompaction", compaction instanceof ForceMergeCompaction);
+        assertTrue("Should create ForceMergeCompaction", unwrap(compaction) instanceof ForceMergeCompaction);
         assertEquals("Custom frequency should be 30 minutes", Duration.ofMinutes(30).toMillis(), compaction.getFrequency());
         assertTrue("ForceMergeCompaction should be in-place", compaction.isInPlaceCompaction());
     }
@@ -403,10 +422,10 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
         assertNotNull(compaction);
-        assertTrue("Should create ForceMergeCompaction", compaction instanceof ForceMergeCompaction);
+        assertTrue("Should create ForceMergeCompaction", unwrap(compaction) instanceof ForceMergeCompaction);
         assertTrue("ForceMergeCompaction should be in-place", compaction.isInPlaceCompaction());
     }
 
@@ -426,9 +445,9 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
-        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        registerCompactionDynamicSettings(indexSettings);
         Compaction compaction = CompactionFactory.create(indexSettings);
-        assertTrue("Should create ForceMergeCompaction", compaction instanceof ForceMergeCompaction);
+        assertTrue("Should create ForceMergeCompaction", unwrap(compaction) instanceof ForceMergeCompaction);
         assertEquals("Initial frequency should be 15 minutes", Duration.ofMinutes(15).toMillis(), compaction.getFrequency());
 
         // Update the frequency dynamically
@@ -461,5 +480,258 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
         assertEquals(CompactionFactory.CompactionType.Invalid, CompactionFactory.CompactionType.from("InvalidType"));
         assertEquals(CompactionFactory.CompactionType.Invalid, CompactionFactory.CompactionType.from(""));
         assertEquals(CompactionFactory.CompactionType.Invalid, CompactionFactory.CompactionType.from("random"));
+    }
+
+    /**
+     * Registers all dynamic settings that CompactionFactory listens to so that
+     * updateIndexMetadata() triggers the update consumers.
+     */
+    private void registerCompactionDynamicSettings(IndexSettings indexSettings) {
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE);
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY);
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE);
+        indexSettings.getScopedSettings().registerSetting(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT);
+    }
+
+    /**
+     * Test that changing index.tsdb_engine.compaction.type dynamically updates the compaction strategy.
+     * Starts with SizeTieredCompaction, switches to ForceMergeCompaction, then to Noop, and verifies
+     * behavior via the Compaction interface (isInPlaceCompaction, getFrequency, plan).
+     */
+    public void testDynamicCompactionTypeChange() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "SizeTieredCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "10m")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+
+        // Initially SizeTieredCompaction: not in-place, frequency 10m
+        assertFalse(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(10).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+
+        // Change to ForceMergeCompaction
+        Settings forceMergeSettings = Settings.builder()
+            .put(settings)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 2)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 1)
+            .build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata())
+                .settings(forceMergeSettings)
+                .numberOfShards(1)
+                .numberOfReplicas(0)
+                .build()
+        );
+
+        assertTrue("After switching to ForceMergeCompaction, compaction should be in-place", compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(10).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+
+        // Change to Noop
+        Settings noopSettings = Settings.builder().put(settings).put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "Noop").build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(noopSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        assertFalse("Noop is not in-place", compaction.isInPlaceCompaction());
+        assertEquals("Noop returns Long.MAX_VALUE for frequency", Long.MAX_VALUE, compaction.getFrequency());
+        assertTrue("Noop always returns empty plan", compaction.plan(Collections.emptyList()).isEmpty());
+    }
+
+    /**
+     * Test that changing index.tsdb_engine.compaction.force_merge.max_segments_after_merge dynamically
+     * updates the ForceMergeCompaction configuration (delegate is replaced with new config).
+     */
+    public void testDynamicForceMergeMaxSegmentsAfterMergeChange() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "15m")
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 3)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 1)
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(15).millis(), compaction.getFrequency());
+
+        // Update max_segments_after_merge from 1 to 2 (must remain <= min_segment_count 3)
+        Settings updatedSettings = Settings.builder()
+            .put(settings)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 2)
+            .build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(updatedSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        // Compaction should still be ForceMerge and work correctly (delegate was replaced with new config)
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(15).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+    }
+
+    /**
+     * Test that changing index.tsdb_engine.compaction.force_merge.min_segment_count dynamically
+     * updates the ForceMergeCompaction configuration.
+     */
+    public void testDynamicForceMergeMinSegmentCountChange() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "20m")
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 2)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.getKey(), 1)
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(20).millis(), compaction.getFrequency());
+
+        // Update min_segment_count from 2 to 5 (max_segments_after_merge 1 is still valid)
+        Settings updatedSettings = Settings.builder()
+            .put(settings)
+            .put(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.getKey(), 5)
+            .build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(updatedSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        assertTrue(compaction.isInPlaceCompaction());
+        assertEquals(TimeValue.timeValueMinutes(20).millis(), compaction.getFrequency());
+        assertTrue(compaction.plan(Collections.emptyList()).isEmpty());
+    }
+
+    /**
+     * Test that changing compaction frequency dynamically still updates the current compaction
+     * when using the delegating compaction (same reference, updated behavior).
+     */
+    public void testDynamicCompactionFrequencyChangeWithDelegatingCompaction() {
+        Settings settings = Settings.builder()
+            .put(IndexMetadata.SETTING_VERSION_CREATED, org.opensearch.Version.CURRENT)
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.getKey(), "ForceMergeCompaction")
+            .put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "5m")
+            .put(TSDBPlugin.TSDB_ENGINE_RETENTION_TIME.getKey(), "7d")
+            .build();
+
+        IndexSettings indexSettings = new IndexSettings(
+            IndexMetadata.builder("test-index").settings(settings).numberOfShards(1).numberOfReplicas(0).build(),
+            Settings.EMPTY
+        );
+        registerCompactionDynamicSettings(indexSettings);
+
+        Compaction compaction = CompactionFactory.create(indexSettings);
+        assertEquals(TimeValue.timeValueMinutes(5).millis(), compaction.getFrequency());
+
+        Settings updatedSettings = Settings.builder().put(settings).put(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.getKey(), "1h").build();
+        indexSettings.updateIndexMetadata(
+            IndexMetadata.builder(indexSettings.getIndexMetadata()).settings(updatedSettings).numberOfShards(1).numberOfReplicas(0).build()
+        );
+
+        assertEquals("Frequency should be updated via settings listener", TimeValue.timeValueHours(1).millis(), compaction.getFrequency());
+    }
+
+    /**
+     * Test that the compaction strategy that produced a non-empty plan is used for the subsequent
+     * compact() call even if the delegate is swapped in between (plan/compact atomicity).
+     * Without this, switching from SizeTiered to ForceMerge between plan and compact would cause
+     * ForceMergeCompaction to throw (it requires exactly one source).
+     */
+    public void testPlanCompactAtomicityUsesPlannerForCompact() throws IOException {
+        ClosedChunkIndex mockIndex1 = mock(ClosedChunkIndex.class);
+        ClosedChunkIndex mockIndex2 = mock(ClosedChunkIndex.class);
+        List<ClosedChunkIndex> nonEmptyPlan = List.of(mockIndex1, mockIndex2);
+
+        RecordingCompaction planner = new RecordingCompaction(nonEmptyPlan);
+        CompactionFactory.DelegatingCompaction delegating = new CompactionFactory.DelegatingCompaction(planner);
+
+        List<ClosedChunkIndex> plan = delegating.plan(Collections.emptyList());
+        assertFalse("Plan should be non-empty so that the planner is pinned", plan.isEmpty());
+        assertSame(nonEmptyPlan, plan);
+
+        delegating.setCompaction(new NoopCompaction());
+
+        delegating.compact(plan, null);
+
+        assertTrue(
+            "compact() must be invoked on the strategy that produced the plan (RecordingCompaction), not the new delegate (Noop)",
+            planner.compactWasCalled()
+        );
+    }
+
+    /**
+     * Test that when plan() returns empty, no pinning occurs and the current delegate is used for compact().
+     */
+    public void testEmptyPlanDoesNotPinDelegate() {
+        RecordingCompaction recorder = new RecordingCompaction(Collections.emptyList());
+        CompactionFactory.DelegatingCompaction delegating = new CompactionFactory.DelegatingCompaction(recorder);
+
+        List<ClosedChunkIndex> plan = delegating.plan(Collections.emptyList());
+        assertTrue(plan.isEmpty());
+
+        delegating.setCompaction(new NoopCompaction());
+
+        assertFalse("isInPlaceCompaction() should reflect current delegate (Noop) when plan was empty", delegating.isInPlaceCompaction());
+    }
+
+    /**
+     * Compaction that returns a fixed plan and records whether compact() was called.
+     * Used to verify plan/compact atomicity in DelegatingCompaction.
+     */
+    private static class RecordingCompaction implements Compaction {
+        private final List<ClosedChunkIndex> planResult;
+        private final AtomicBoolean compactCalled = new AtomicBoolean(false);
+
+        RecordingCompaction(List<ClosedChunkIndex> planResult) {
+            this.planResult = planResult;
+        }
+
+        @Override
+        public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
+            return planResult;
+        }
+
+        @Override
+        public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
+            compactCalled.set(true);
+        }
+
+        boolean compactWasCalled() {
+            return compactCalled.get();
+        }
+
+        @Override
+        public long getFrequency() {
+            return TimeValue.timeValueMinutes(15).millis();
+        }
+
+        @Override
+        public boolean isInPlaceCompaction() {
+            return false;
+        }
     }
 }
