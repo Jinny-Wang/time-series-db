@@ -329,7 +329,7 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
             boolean isNewBucket = !timeSeriesByBucket.containsKey(bucket);
             Map<Labels, TimeSeries> bucketSeries = timeSeriesByBucket.computeIfAbsent(bucket, k -> new HashMap<>());
             if (isNewBucket) {
-                bytesForThisDoc += SampleList.ARRAYLIST_OVERHEAD + RamUsageEstimator.HASHTABLE_RAM_BYTES_PER_ENTRY;
+                bytesForThisDoc += SampleList.HASHMAP_OVERHEAD + RamUsageEstimator.HASHTABLE_RAM_BYTES_PER_ENTRY;
             }
             TimeSeries existingSeries = bucketSeries.get(labels);
             if (existingSeries != null) {
@@ -435,7 +435,7 @@ public class TimeSeriesUnfoldAggregator extends BucketsAggregator {
 
                 // Track circuit breaker for processed time series storage
                 // Estimate the size of the processed time series list
-                long processedBytes = RamUsageEstimator.HASHTABLE_RAM_BYTES_PER_ENTRY + SampleList.ARRAYLIST_OVERHEAD;
+                long processedBytes = RamUsageEstimator.HASHTABLE_RAM_BYTES_PER_ENTRY + SampleList.HASHMAP_OVERHEAD;
                 for (TimeSeries ts : processedTimeSeries) {
                     processedBytes += TimeSeries.ESTIMATED_MEMORY_OVERHEAD + ts.getLabels().ramBytesUsed();
                     processedBytes += ts.getSamples().size() * TimeSeries.ESTIMATED_SAMPLE_SIZE;
