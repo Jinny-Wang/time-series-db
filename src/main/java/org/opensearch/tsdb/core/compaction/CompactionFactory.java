@@ -69,24 +69,30 @@ public class CompactionFactory {
         Compaction initial = getCompactionFor(indexSettings);
         DelegatingCompaction delegating = new DelegatingCompaction(initial);
 
-        indexSettings.getScopedSettings().addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE, newType -> {
-            logger.info("Updating compaction type to: {}", newType);
-            delegating.setCompaction(getCompactionFor(indexSettings, newType));
-        });
-        indexSettings.getScopedSettings().addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY, newFrequency -> {
-            logger.info("Updating compaction frequency to: {}", newFrequency);
-            delegating.setFrequency(newFrequency.getMillis());
-        });
+        // IndexScopedSettings only provides 1- and 2-setting consumers (no 4-arg overload), so we use two
+        // grouped consumers so all updates use callback values instead of stale indexSettings.
         indexSettings.getScopedSettings()
-            .addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE, newMaxSegments -> {
-                logger.info("Updating force merge max segments after merge to: {}", newMaxSegments);
-                delegating.setCompaction(getCompactionFor(indexSettings));
-            });
+            .addSettingsUpdateConsumer(
+                TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE,
+                TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY,
+                (newType, newFrequency) -> {
+                    logger.info("Updating compaction type to: {}, frequency to: {}", newType, newFrequency);
+                    delegating.setCompaction(getCompactionFor(indexSettings, newType, newFrequency.getMillis(), null, null));
+                }
+            );
         indexSettings.getScopedSettings()
-            .addSettingsUpdateConsumer(TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT, newMinSegments -> {
-                logger.info("Updating force merge min segment count to: {}", newMinSegments);
-                delegating.setCompaction(getCompactionFor(indexSettings));
-            });
+            .addSettingsUpdateConsumer(
+                TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT,
+                TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE,
+                (newMinSegments, newMaxSegments) -> {
+                    logger.info(
+                        "Updating force merge settings: min_segment_count={}, max_segments_after_merge={}",
+                        newMinSegments,
+                        newMaxSegments
+                    );
+                    delegating.setCompaction(getCompactionFor(indexSettings, null, null, newMinSegments, newMaxSegments));
+                }
+            );
 
         return delegating;
     }
@@ -162,20 +168,38 @@ public class CompactionFactory {
     }
 
     private static Compaction getCompactionFor(IndexSettings indexSettings) {
-        return getCompactionFor(indexSettings, null);
+        return getCompactionFor(indexSettings, null, null, null, null);
+    }
+
+    private static Compaction getCompactionFor(IndexSettings indexSettings, String compactionTypeOverride) {
+        return getCompactionFor(indexSettings, compactionTypeOverride, null, null, null);
     }
 
     /**
-     * Creates a compaction for the given index settings, optionally using an override compaction type
-     * (e.g. when a settings update consumer receives the new type before IndexSettings is updated).
+     * Creates a compaction for the given index settings, with optional overrides for values that
+     * may not yet be reflected in indexSettings when update consumers run (consumers are invoked
+     * before IndexSettings is updated). Use overrides from the consumer callback arguments so
+     * runtime updates are applied correctly.
+     *
+     * @param frequencyMillisOverride            when non-null, use for all compaction types instead of settings
+     * @param forceMergeMinSegmentCountOverride  when non-null, use for ForceMergeCompaction instead of settings
+     * @param forceMergeMaxSegmentsOverride      when non-null, use for ForceMergeCompaction instead of settings
      */
-    private static Compaction getCompactionFor(IndexSettings indexSettings, String compactionTypeOverride) {
+    private static Compaction getCompactionFor(
+        IndexSettings indexSettings,
+        String compactionTypeOverride,
+        Long frequencyMillisOverride,
+        Integer forceMergeMinSegmentCountOverride,
+        Integer forceMergeMaxSegmentsOverride
+    ) {
         CompactionType compactionType = compactionTypeOverride != null
             ? CompactionType.from(compactionTypeOverride)
             : CompactionType.from(TSDBPlugin.TSDB_ENGINE_COMPACTION_TYPE.get(indexSettings.getSettings()));
 
-        // Read common settings used by multiple compaction types
-        long frequency = TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.get(indexSettings.getSettings()).getMillis();
+        // Read common settings used by multiple compaction types (use override when provided by callback)
+        long frequency = frequencyMillisOverride != null
+            ? frequencyMillisOverride
+            : TSDBPlugin.TSDB_ENGINE_COMPACTION_FREQUENCY.get(indexSettings.getSettings()).getMillis();
         TimeUnit resolution = TimeUnit.valueOf(TSDBPlugin.TSDB_ENGINE_TIME_UNIT.get(indexSettings.getSettings()));
 
         switch (compactionType) {
@@ -197,10 +221,12 @@ public class CompactionFactory {
 
                 return new SizeTieredCompaction(tiers.stream().map(Duration::ofHours).toArray(Duration[]::new), frequency, resolution);
             case ForceMergeCompaction:
-                int minSegmentCount = TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.get(indexSettings.getSettings());
-                int maxSegmentsAfterForceMerge = TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.get(
-                    indexSettings.getSettings()
-                );
+                int minSegmentCount = forceMergeMinSegmentCountOverride != null
+                    ? forceMergeMinSegmentCountOverride
+                    : TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MIN_SEGMENT_COUNT.get(indexSettings.getSettings());
+                int maxSegmentsAfterForceMerge = forceMergeMaxSegmentsOverride != null
+                    ? forceMergeMaxSegmentsOverride
+                    : TSDBPlugin.TSDB_ENGINE_FORCE_MERGE_MAX_SEGMENTS_AFTER_MERGE.get(indexSettings.getSettings());
                 long oooCutoffWindow = TSDBPlugin.TSDB_ENGINE_OOO_CUTOFF.get(indexSettings.getSettings()).getMillis();
                 long blockDuration = TSDBPlugin.TSDB_ENGINE_BLOCK_DURATION.get(indexSettings.getSettings()).getMillis();
                 return new ForceMergeCompaction(
