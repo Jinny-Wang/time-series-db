@@ -22,7 +22,7 @@ public class NoopCompactionTests extends OpenSearchTestCase {
         ClosedChunkIndex realIndex3 = Mockito.mock(ClosedChunkIndex.class);
 
         var compaction = new NoopCompaction();
-        assertEquals(0, compaction.plan(List.of(realIndex1, realIndex2, realIndex3, realIndex1)).size());
+        assertTrue(compaction.plan(List.of(realIndex1, realIndex2, realIndex3, realIndex1)).isEmpty());
     }
 
     public void testGetFrequency() {
@@ -37,7 +37,8 @@ public class NoopCompactionTests extends OpenSearchTestCase {
         ClosedChunkIndex dest = Mockito.mock(ClosedChunkIndex.class);
 
         var compaction = new NoopCompaction();
-        compaction.compact(List.of(sourceIndex1, sourceIndex2, sourceIndex3), dest);
+        Plan plan = compaction.plan(List.of(sourceIndex1, sourceIndex2, sourceIndex3));
+        compaction.compact(plan, dest);
         Mockito.verify(sourceIndex1, Mockito.times(0)).copyTo(Mockito.any());
         Mockito.verify(sourceIndex2, Mockito.times(0)).copyTo(Mockito.any());
         Mockito.verify(sourceIndex3, Mockito.times(0)).copyTo(Mockito.any());

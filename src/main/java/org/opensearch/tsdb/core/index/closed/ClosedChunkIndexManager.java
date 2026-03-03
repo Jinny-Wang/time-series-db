@@ -29,6 +29,7 @@ import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.tsdb.MetadataStore;
 import org.opensearch.tsdb.TSDBPlugin;
 import org.opensearch.tsdb.core.compaction.Compaction;
+import org.opensearch.tsdb.core.compaction.Plan;
 import org.opensearch.tsdb.core.head.MemChunk;
 import org.opensearch.tsdb.core.head.MemSeries;
 import org.opensearch.tsdb.core.index.ReaderManagerWithMetadata;
@@ -255,9 +256,12 @@ public class ClosedChunkIndexManager implements Closeable {
             if (Instant.now().isAfter(lastCompactionTime.plusMillis(compaction.getFrequency()))) {
                 lastCompactionTime = Instant.now();
                 var plan = compaction.plan(getClosedChunkIndexes(Instant.ofEpochMilli(0), Instant.now()));
-                log.info("Compaction plan: {}", plan.stream().map(i -> "[" + i.getMinTime() + ", " + i.getMaxTime() + "]").toList());
+                log.info(
+                    "Compaction plan: {}",
+                    plan.getIndexes().stream().map(i -> "[" + i.getMinTime() + ", " + i.getMaxTime() + "]").toList()
+                );
                 if (!plan.isEmpty()) {
-                    if (lockIndexesForWrites(plan, Instant.now().plus(COMPACTION_LOCK_ACQUISITION_TIMEOUT))) {
+                    if (lockIndexesForWrites(plan.getIndexes(), Instant.now().plus(COMPACTION_LOCK_ACQUISITION_TIMEOUT))) {
                         try {
                             long compactionStart = System.nanoTime();
                             var compactedIndex = compactIndexes(plan);
@@ -265,9 +269,9 @@ public class ClosedChunkIndexManager implements Closeable {
                             // If compactedIndex is null, it means in-place optimization (e.g., ForceMergeCompaction)
                             // No need to swap or delete source indexes
                             if (compactedIndex != null) {
-                                pendingClosureIndexes.addAll(plan);
-                                swapIndexes(plan, compactedIndex);
-                                var removed = closeIndexes(new HashSet<>(plan));
+                                pendingClosureIndexes.addAll(plan.getIndexes());
+                                swapIndexes(plan.getIndexes(), compactedIndex);
+                                var removed = closeIndexes(new HashSet<>(plan.getIndexes()));
                                 pendingClosureIndexes.removeAll(removed);
                                 if (!removed.isEmpty()) {
                                     TSDBMetrics.incrementCounter(TSDBMetrics.INDEX.compactionDeletedTotal, removed.size());
@@ -364,30 +368,31 @@ public class ClosedChunkIndexManager implements Closeable {
         return false;
     }
 
-    private ClosedChunkIndex compactIndexes(List<ClosedChunkIndex> plan) throws IOException {
+    private ClosedChunkIndex compactIndexes(Plan plan) throws IOException {
         var start = Instant.now();
+        var indexes = plan.getIndexes();
 
         // Check if this is in-place optimization using the explicit flag
-        if (compaction.isInPlaceCompaction()) {
+        if (plan.isInPlaceCompaction()) {
             // In-place optimization - no new index created
             compaction.compact(plan, null);
             log.info(
                 "In-place optimization took: {} s, {} index(es): {}",
                 Duration.between(start, Instant.now()).toSeconds(),
-                plan.size(),
-                plan.stream().map(i -> i.getMetadata().directoryName()).collect(Collectors.joining(", "))
+                indexes.size(),
+                indexes.stream().map(i -> i.getMetadata().directoryName()).collect(Collectors.joining(", "))
             );
             return null; // Signal that no new index was created
         }
 
         long totalSamples = 0;
-        for (ClosedChunkIndex srcIndex : plan) {
+        for (ClosedChunkIndex srcIndex : indexes) {
             totalSamples += srcIndex.getMetadata().stats().sampleCount();
         }
 
         // Traditional compaction - multiple sources merged into new destination
-        var minTime = Time.toTimestamp(plan.getFirst().getMinTime(), resolution);
-        var maxTime = Time.toTimestamp(plan.getLast().getMaxTime(), resolution);
+        var minTime = Time.toTimestamp(indexes.getFirst().getMinTime(), resolution);
+        var maxTime = Time.toTimestamp(indexes.getLast().getMaxTime(), resolution);
         var dirName = String.join("_", BLOCK_PREFIX, Long.toString(minTime), Long.toString(maxTime), UUIDs.base64UUID());
         var metadata = new ClosedChunkIndex.Metadata(dirName, minTime, maxTime, new ClosedChunkIndex.Stats(totalSamples));
 
@@ -409,7 +414,7 @@ public class ClosedChunkIndexManager implements Closeable {
         log.info(
             "Compaction took: {} s, original size: {} bytes, compacted size: {} bytes",
             Duration.between(start, Instant.now()).toSeconds(),
-            sizeOf(plan.toArray(ClosedChunkIndex[]::new)),
+            sizeOf(indexes.toArray(ClosedChunkIndex[]::new)),
             sizeOf(newIndex)
         );
         return newIndex;

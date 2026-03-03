@@ -86,7 +86,7 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
         if (!indexes.isEmpty()) {
             var plan = forceMergePolicy.plan(indexes);
             // May be empty if no eligible indexes (all single-segment or too recent)
-            assertTrue(plan.isEmpty() || plan.size() == 1);
+            assertTrue(plan.isEmpty() || plan.getIndexes().size() == 1);
         }
 
         manager.close();
@@ -196,13 +196,13 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
         // First call to plan should return one index or empty if no multi-segment indexes
         var plan1 = forceMergePolicy.plan(indexes);
         if (!plan1.isEmpty()) {
-            assertEquals("Plan should return exactly one index", 1, plan1.size());
-            assertTrue("Planned index should have >= 2 segments", plan1.get(0).getSegmentCount() >= 2);
+            assertEquals("Plan should return exactly one index", 1, plan1.getIndexes().size());
+            assertTrue("Planned index should have >= 2 segments", plan1.getIndexes().get(0).getSegmentCount() >= 2);
 
             // Second call should return the same index (stateless behavior)
             var plan2 = forceMergePolicy.plan(indexes);
-            assertEquals("Plan should return exactly one index", 1, plan2.size());
-            assertEquals("Plan should be stateless and return the same index", plan1.get(0), plan2.get(0));
+            assertEquals("Plan should return exactly one index", 1, plan2.getIndexes().size());
+            assertEquals("Plan should be stateless and return the same index", plan1.getIndexes().get(0), plan2.getIndexes().get(0));
         }
 
         manager.close();
@@ -344,12 +344,12 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
         var plan3 = forceMergePolicy.plan(indexes);
 
         if (!plan1.isEmpty()) {
-            assertEquals("Plan should return exactly one index", 1, plan1.size());
-            assertTrue("Planned index should have >= 2 segments", plan1.get(0).getSegmentCount() >= 2);
+            assertEquals("Plan should return exactly one index", 1, plan1.getIndexes().size());
+            assertTrue("Planned index should have >= 2 segments", plan1.getIndexes().get(0).getSegmentCount() >= 2);
 
             // Verify stateless behavior - should always return the same index
-            assertEquals("Plan should be stateless and return the same index", plan1.get(0), plan2.get(0));
-            assertEquals("Plan should be stateless and return the same index", plan1.get(0), plan3.get(0));
+            assertEquals("Plan should be stateless and return the same index", plan1.getIndexes().get(0), plan2.getIndexes().get(0));
+            assertEquals("Plan should be stateless and return the same index", plan1.getIndexes().get(0), plan3.getIndexes().get(0));
 
             // Verify it's the first (oldest) eligible index
             ClosedChunkIndex firstEligible = indexes.stream().filter(idx -> {
@@ -361,7 +361,7 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
             }).findFirst().orElse(null);
 
             if (firstEligible != null && firstEligible != indexes.get(indexes.size() - 1)) {
-                assertEquals("Should return the first eligible index", firstEligible, plan1.get(0));
+                assertEquals("Should return the first eligible index", firstEligible, plan1.getIndexes().get(0));
             }
         }
 
@@ -419,8 +419,9 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
             return;
         }
 
-        // Compact the index
-        forceMergePolicy.compact(List.of(firstIndex), null);
+        // Compact the index (create plan with the first index; we already verified it has >= 2 segments)
+        Plan plan = new Plan(List.of(firstIndex), forceMergePolicy);
+        forceMergePolicy.compact(plan, null);
 
         int segmentCountAfter = firstIndex.getSegmentCount();
         assertEquals("Index should have 1 segment after force merge", 1, segmentCountAfter);
@@ -459,7 +460,8 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
 
         List<ClosedChunkIndex> indexes = manager.getClosedChunkIndexes(java.time.Instant.ofEpochMilli(0), java.time.Instant.now());
 
-        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, () -> forceMergePolicy.compact(indexes, null));
+        Plan plan = new Plan(indexes, forceMergePolicy);
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, () -> forceMergePolicy.compact(plan, null));
         assertTrue("Exception message should mention 'exactly one source'", exception.getMessage().contains("exactly one source"));
 
         manager.close();
@@ -475,10 +477,8 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
             TimeUnit.MILLISECONDS
         );
 
-        IllegalArgumentException exception = expectThrows(
-            IllegalArgumentException.class,
-            () -> forceMergePolicy.compact(Collections.emptyList(), null)
-        );
+        Plan emptyPlan = new Plan(Collections.emptyList(), forceMergePolicy);
+        IllegalArgumentException exception = expectThrows(IllegalArgumentException.class, () -> forceMergePolicy.compact(emptyPlan, null));
         assertTrue("Exception message should mention 'exactly one source'", exception.getMessage().contains("exactly one source"));
     }
 
@@ -518,7 +518,8 @@ public class ForceMergeCompactionTests extends OpenSearchTestCase {
         ClosedChunkIndex dest = indexes.get(1);
 
         // Should not throw exception, just log warning
-        forceMergePolicy.compact(List.of(source), dest);
+        Plan plan = new Plan(List.of(source), forceMergePolicy);
+        forceMergePolicy.compact(plan, dest);
 
         assertEquals("Source should be force merged to 1 segment", 1, source.getSegmentCount());
 

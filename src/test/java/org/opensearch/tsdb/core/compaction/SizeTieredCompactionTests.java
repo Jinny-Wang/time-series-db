@@ -80,7 +80,7 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         Duration[] durations = IntStream.of(2, 6, 18, 54, 162, 486).mapToObj(Duration::ofHours).toArray(Duration[]::new);
         SizeTieredCompaction compaction = new SizeTieredCompaction(durations, 0, Constants.Time.DEFAULT_TIME_UNIT);
 
-        List<ClosedChunkIndex> result = compaction.plan(Collections.emptyList());
+        Plan result = compaction.plan(Collections.emptyList());
         assertTrue(result.isEmpty());
     }
 
@@ -105,7 +105,7 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 1, 2 }, new long[] { 1, 2, 3 });
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        Plan result = compaction.plan(indexes);
         assertTrue(result.isEmpty());
         manager.close();
     }
@@ -132,7 +132,7 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0 }, new long[] { 1 });
 
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        Plan result = compaction.plan(indexes);
         assertTrue(result.isEmpty());
         manager.close();
     }
@@ -160,8 +160,8 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 1, 2 }, new long[] { 1, 2, 3 });
 
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
-        assertEquals(3, result.size());
+        Plan result = compaction.plan(indexes);
+        assertEquals(3, result.getIndexes().size());
         manager.close();
     }
 
@@ -187,8 +187,8 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { -11, 0, 1, 5 }, new long[] { -4, 1, 2, 6 });
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
-        assertEquals(2, result.size()); // Should compact first two indexes, third index is out of range.
+        Plan result = compaction.plan(indexes);
+        assertEquals(2, result.getIndexes().size()); // Should compact first two indexes, third index is out of range.
         manager.close();
     }
 
@@ -216,11 +216,11 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 1, 20 }, new long[] { 1, 2, 22 });
 
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        Plan result = compaction.plan(indexes);
         // Since max(4 hours) < latestBlockMin(20 hours) and size > 1, should return the first two
-        assertEquals(2, result.size());
-        assertEquals(indexes.get(0), result.get(0));
-        assertEquals(indexes.get(1), result.get(1));
+        assertEquals(2, result.getIndexes().size());
+        assertEquals(indexes.get(0), result.getIndexes().get(0));
+        assertEquals(indexes.get(1), result.getIndexes().get(1));
         manager.close();
     }
 
@@ -245,7 +245,7 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { -10, -6, 0 }, new long[] { -9, -5, 1 });
 
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        Plan result = compaction.plan(indexes);
         // Should handle negative timestamps correctly
         assertNotNull(result);
         manager.close();
@@ -273,9 +273,9 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         Labels labels1 = ByteLabels.fromStrings("label1", "value1");
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 20, 23 }, new long[] { 9, 23, 26 });
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
+        Plan result = compaction.plan(indexes);
         // Since first index alone spans 0-18 (exactly 18), and others are in different range
-        assertEquals(0, result.size());
+        assertEquals(0, result.getIndexes().size());
         manager.close();
     }
 
@@ -302,8 +302,8 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         MemSeries series1 = new MemSeries(0, labels1, SeriesEventListener.NOOP);
         List<ClosedChunkIndex> indexes = createIndexes(manager, series1, new long[] { 0, 6, 12 }, new long[] { 2, 8, 14 });
 
-        List<ClosedChunkIndex> result = compaction.plan(indexes);
-        assertEquals(2, result.size());
+        Plan result = compaction.plan(indexes);
+        assertEquals(2, result.getIndexes().size());
         manager.close();
     }
 
@@ -329,6 +329,7 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         var indexes = createIndexes(manager, series1, new long[] { 0, 1, 2 }, new long[] { 1, 2, 3 });
         manager.commitChangedIndexes(List.of(series1));
 
+        Plan plan = compaction.plan(indexes);
         var compactedMinTime = Time.toTimestamp(indexes.getFirst().getMinTime(), Constants.Time.DEFAULT_TIME_UNIT);
         var compactedMaxTime = Time.toTimestamp(indexes.getLast().getMaxTime(), Constants.Time.DEFAULT_TIME_UNIT);
         String dirName = String.join("_", "block", Long.toString(compactedMinTime), Long.toString(compactedMaxTime), UUIDs.base64UUID());
@@ -345,7 +346,7 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
         }
 
         // Execute compact
-        compaction.compact(indexes, dest);
+        compaction.compact(plan, dest);
         assertTrue(dest.getIndexSize() < sourceSize);
         var compactedSeriesMetadata = new HashMap<Long, Long>();
         dest.applyLiveSeriesMetaData(compactedSeriesMetadata::put);
@@ -432,8 +433,9 @@ public class SizeTieredCompactionTests extends OpenSearchTestCase {
             Settings.EMPTY
         );
 
+        Plan plan = compaction.plan(indexes);
         // Execute compact
-        compaction.compact(indexes, dest);
+        compaction.compact(plan, dest);
 
         // Verify destination has metadata file
         List<String> destMetadataFiles = SeriesMetadataIO.listMetadataFiles(dest.getDirectory());

@@ -656,12 +656,10 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
     }
 
     /**
-     * Test that the compaction strategy that produced a non-empty plan is used for the subsequent
-     * compact() call even if the delegate is swapped in between (plan/compact atomicity).
-     * Without this, switching from SizeTiered to ForceMerge between plan and compact would cause
-     * ForceMergeCompaction to throw (it requires exactly one source).
+     * Test that compact() rejects execution when the plan was created by a different strategy
+     * (e.g. after a dynamic settings change). Client must obtain a new plan before compacting.
      */
-    public void testPlanCompactAtomicityUsesPlannerForCompact() throws IOException {
+    public void testCompactRejectsWhenPlannerChanged() {
         ClosedChunkIndex mockIndex1 = mock(ClosedChunkIndex.class);
         ClosedChunkIndex mockIndex2 = mock(ClosedChunkIndex.class);
         List<ClosedChunkIndex> nonEmptyPlan = List.of(mockIndex1, mockIndex2);
@@ -669,28 +667,29 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
         RecordingCompaction planner = new RecordingCompaction(nonEmptyPlan);
         CompactionFactory.DelegatingCompaction delegating = new CompactionFactory.DelegatingCompaction(planner);
 
-        List<ClosedChunkIndex> plan = delegating.plan(Collections.emptyList());
-        assertFalse("Plan should be non-empty so that the planner is pinned", plan.isEmpty());
-        assertSame(nonEmptyPlan, plan);
+        Plan plan = delegating.plan(Collections.emptyList());
+        assertFalse("Plan should be non-empty", plan.isEmpty());
+        assertEquals(nonEmptyPlan, plan.getIndexes());
+        assertSame(planner, plan.getPlanner());
 
         delegating.setCompaction(new NoopCompaction());
 
-        delegating.compact(plan, null);
-
+        IllegalStateException e = expectThrows(IllegalStateException.class, () -> delegating.compact(plan, null));
         assertTrue(
-            "compact() must be invoked on the strategy that produced the plan (RecordingCompaction), not the new delegate (Noop)",
-            planner.compactWasCalled()
+            "Message should instruct client to obtain a new plan: " + e.getMessage(),
+            e.getMessage().contains("Compaction strategy changed since plan was created")
         );
+        assertFalse("compact() must not be invoked on the old planner when delegate changed", planner.compactWasCalled());
     }
 
     /**
-     * Test that when plan() returns empty, no pinning occurs and the current delegate is used for compact().
+     * Test that when plan() returns empty, the current delegate is used for isInPlaceCompaction().
      */
     public void testEmptyPlanDoesNotPinDelegate() {
         RecordingCompaction recorder = new RecordingCompaction(Collections.emptyList());
         CompactionFactory.DelegatingCompaction delegating = new CompactionFactory.DelegatingCompaction(recorder);
 
-        List<ClosedChunkIndex> plan = delegating.plan(Collections.emptyList());
+        Plan plan = delegating.plan(Collections.emptyList());
         assertTrue(plan.isEmpty());
 
         delegating.setCompaction(new NoopCompaction());
@@ -700,7 +699,7 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
 
     /**
      * Compaction that returns a fixed plan and records whether compact() was called.
-     * Used to verify plan/compact atomicity in DelegatingCompaction.
+     * Used to verify plan/compact rejection in DelegatingCompaction.
      */
     private static class RecordingCompaction implements Compaction {
         private final List<ClosedChunkIndex> planResult;
@@ -711,12 +710,12 @@ public class CompactionFactoryTests extends OpenSearchTestCase {
         }
 
         @Override
-        public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
-            return planResult;
+        public Plan plan(List<ClosedChunkIndex> indexes) {
+            return new Plan(planResult, this);
         }
 
         @Override
-        public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
+        public void compact(Plan plan, ClosedChunkIndex dest) throws IOException {
             compactCalled.set(true);
         }
 

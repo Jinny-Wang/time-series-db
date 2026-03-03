@@ -102,16 +102,12 @@ public class CompactionFactory {
      * when dynamic settings (type or force-merge config) change.
      * Package-private for tests that need to assert on the underlying compaction type.
      * <p>
-     * Pins the compaction used for {@link #plan(List)} and uses that same instance for the
-     * subsequent {@link #isInPlaceCompaction()} and {@link #compact(List, ClosedChunkIndex)} calls
-     * in the same compaction run. This ensures that if the compaction type is changed dynamically
-     * between plan and compact, the plan is still executed by the strategy that produced it
-     * (e.g. ForceMergeCompaction will not receive a multi-index plan from SizeTieredCompaction).
+     * Uses {@link Plan} to carry planner identity. {@link #compact(Plan, ClosedChunkIndex)} rejects
+     * the call if the plan was created by a different strategy (e.g. after a settings change),
+     * so the client must obtain a new plan.
      */
     static class DelegatingCompaction implements Compaction {
         private final AtomicReference<Compaction> current;
-        /** Pinned compaction that produced the last plan(); used for the next compact() run. */
-        private final AtomicReference<Compaction> lastPlanner = new AtomicReference<>(null);
 
         DelegatingCompaction(Compaction initial) {
             this.current = new AtomicReference<>(initial);
@@ -126,34 +122,25 @@ public class CompactionFactory {
             return current.get();
         }
 
-        /** Uses the pinned planner if set (same run as plan()), otherwise the current delegate. */
-        private Compaction compactionForRun() {
-            Compaction pinned = lastPlanner.get();
-            return pinned != null ? pinned : current.get();
+        @Override
+        public Plan plan(List<ClosedChunkIndex> indexes) {
+            return current.get().plan(indexes);
         }
 
         @Override
-        public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
-            Compaction c = current.get();
-            List<ClosedChunkIndex> result = c.plan(indexes);
-            if (!result.isEmpty()) {
-                lastPlanner.set(c);
+        public void compact(Plan plan, ClosedChunkIndex dest) throws IOException {
+            Compaction planner = plan.getPlanner();
+            if (planner != current.get()) {
+                throw new IllegalStateException(
+                    "Compaction strategy changed since plan was created; obtain a new plan with plan() before compacting"
+                );
             }
-            return result;
-        }
-
-        @Override
-        public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
-            Compaction c = lastPlanner.getAndSet(null);
-            if (c == null) {
-                c = current.get();
-            }
-            c.compact(sources, dest);
+            planner.compact(plan, dest);
         }
 
         @Override
         public boolean isInPlaceCompaction() {
-            return compactionForRun().isInPlaceCompaction();
+            return current.get().isInPlaceCompaction();
         }
 
         @Override

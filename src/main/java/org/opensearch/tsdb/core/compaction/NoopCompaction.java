@@ -14,13 +14,13 @@ import java.util.List;
 
 public class NoopCompaction implements Compaction {
     @Override
-    public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
-        return List.of();
+    public Plan plan(List<ClosedChunkIndex> indexes) {
+        return new Plan(List.of(), this);
     }
 
     @Override
-    public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
-
+    public void compact(Plan plan, ClosedChunkIndex dest) throws IOException {
+        // no-op
     }
 
     @Override

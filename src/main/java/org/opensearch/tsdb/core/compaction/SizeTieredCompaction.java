@@ -80,9 +80,9 @@ public class SizeTieredCompaction implements Compaction {
      * @return list of indexes to compact together, or empty list if no suitable group is found
      */
     @Override
-    public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
+    public Plan plan(List<ClosedChunkIndex> indexes) {
         if (ranges.length < 2 || indexes.isEmpty()) {
-            return Collections.emptyList();
+            return new Plan(Collections.emptyList(), this);
         }
 
         // The list is sorted by max timestamp, so getLast() returns the newest block
@@ -98,11 +98,11 @@ public class SizeTieredCompaction implements Compaction {
                 var min = Time.toTimestamp(group.getFirst().getMinTime(), resolution);
                 var max = Time.toTimestamp(group.getLast().getMaxTime(), resolution);
                 if ((max - min == ranges[i] || max <= latestBlockMin) && group.size() > 1) {
-                    return group;
+                    return new Plan(group, this);
                 }
             }
         }
-        return Collections.emptyList();
+        return new Plan(Collections.emptyList(), this);
     }
 
     /**
@@ -177,7 +177,8 @@ public class SizeTieredCompaction implements Compaction {
      * @throws IOException if there's an error during the merge or force merge operation
      */
     @Override
-    public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
+    public void compact(Plan plan, ClosedChunkIndex dest) throws IOException {
+        List<ClosedChunkIndex> sources = plan.getIndexes();
         Map<Long, Long> liveSeriesMetadata = new HashMap<>();
         for (var src : sources) {
             src.copyTo(dest);

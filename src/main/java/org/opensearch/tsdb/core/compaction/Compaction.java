@@ -17,11 +17,20 @@ public interface Compaction {
      * Plans which indexes should be compacted.
      *
      * @param indexes list of closed chunk indexes sorted in ascending order by max timestamp
-     * @return list of indexes to compact (implementation-specific), or empty list if no compaction is needed
+     * @return a plan containing the indexes to compact and this strategy as planner; empty plan if no compaction needed
      */
-    List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes);
+    Plan plan(List<ClosedChunkIndex> indexes);
 
-    void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException;
+    /**
+     * Executes compaction for the given plan. The implementation may reject the call if the plan was
+     * created by a different compaction strategy (e.g. after a dynamic settings change).
+     *
+     * @param plan plan produced by {@link #plan(List)} (must have been created by this compaction)
+     * @param dest destination index, or null for in-place compaction
+     * @throws IllegalStateException if the plan was not created by the current strategy
+     * @throws IOException if compaction fails
+     */
+    void compact(Plan plan, ClosedChunkIndex dest) throws IOException;
 
     /**
      * Returns whether this compaction strategy performs in-place optimization.

@@ -109,9 +109,9 @@ public class ForceMergeCompaction implements Compaction {
      * @return single-element list containing the first eligible index to force merge, or empty list
      */
     @Override
-    public List<ClosedChunkIndex> plan(List<ClosedChunkIndex> indexes) {
+    public Plan plan(List<ClosedChunkIndex> indexes) {
         if (indexes.isEmpty()) {
-            return Collections.emptyList();
+            return new Plan(Collections.emptyList(), this);
         }
 
         // Calculate safe cutoff for force merge considering OOO writes
@@ -125,7 +125,7 @@ public class ForceMergeCompaction implements Compaction {
         // 1. Old enough to not receive OOO writes (maxTime <= safeCutoffMaxTime)
         // 2. Have at least minSegmentCount segments (force merge is only beneficial for multi-segment indexes)
         // Return the first eligible index (oldest)
-        return indexes.stream().filter(index -> {
+        List<ClosedChunkIndex> result = indexes.stream().filter(index -> {
             try {
                 long indexMaxTime = Time.toTimestamp(index.getMaxTime(), resolution);
                 int segmentCount = index.getSegmentCount();
@@ -135,6 +135,7 @@ public class ForceMergeCompaction implements Compaction {
                 return false;
             }
         }).findFirst().map(List::of).orElse(Collections.emptyList());
+        return new Plan(result, this);
     }
 
     /**
@@ -156,7 +157,8 @@ public class ForceMergeCompaction implements Compaction {
      * @throws IOException if there's an error during the force merge operation
      */
     @Override
-    public void compact(List<ClosedChunkIndex> sources, ClosedChunkIndex dest) throws IOException {
+    public void compact(Plan plan, ClosedChunkIndex dest) throws IOException {
+        List<ClosedChunkIndex> sources = plan.getIndexes();
         if (sources.size() != 1) {
             throw new IllegalArgumentException("ForceMergeCompaction requires exactly one source index, but got " + sources.size());
         }
