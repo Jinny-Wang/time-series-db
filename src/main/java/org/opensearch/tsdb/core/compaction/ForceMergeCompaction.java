@@ -33,7 +33,7 @@ import org.opensearch.tsdb.core.utils.Time;
  * <p>
  * Note: This implementation enforces that only one index is compacted at a time.
  * The {@link #plan(List)} method returns a single index (or empty list), and
- * {@link #compact(List, ClosedChunkIndex)} requires exactly one source index.
+ * {@link #compact(Plan, ClosedChunkIndex)} requires exactly one source index in the plan.
  */
 public class ForceMergeCompaction implements Compaction {
     private static final Logger logger = LogManager.getLogger(ForceMergeCompaction.class);
@@ -147,13 +147,13 @@ public class ForceMergeCompaction implements Compaction {
      * <p>
      * Requirements:
      * <ul>
-     *   <li>The sources list must contain exactly ONE index</li>
+     *   <li>The plan's index list must contain exactly ONE index</li>
      *   <li>The dest parameter should be null (ignored for in-place optimization)</li>
      * </ul>
      *
-     * @param sources list containing exactly one index to force merge
-     * @param dest    destination index (must be null for in-place optimization)
-     * @throws IllegalArgumentException if sources list doesn't contain exactly one element
+     * @param plan plan whose index list contains exactly one index to force merge
+     * @param dest destination index (must be null for in-place optimization)
+     * @throws IllegalArgumentException if the plan's index list doesn't contain exactly one element
      * @throws IOException if there's an error during the force merge operation
      */
     @Override

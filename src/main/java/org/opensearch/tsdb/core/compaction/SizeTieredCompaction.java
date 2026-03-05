@@ -172,8 +172,8 @@ public class SizeTieredCompaction implements Compaction {
      * After compaction, the destination index contains all data from the source indexes
      * in an optimized, single-segment format.
      *
-     * @param sources list of source indexes to be compacted
-     * @param dest    destination index where compacted data will be stored
+     * @param plan plan containing the source indexes to be compacted
+     * @param dest destination index where compacted data will be stored
      * @throws IOException if there's an error during the merge or force merge operation
      */
     @Override
